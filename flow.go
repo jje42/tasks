@@ -2,14 +2,21 @@ package flow
 
 import (
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"plugin"
 	"reflect"
 	"strings"
 
 	"github.com/fatih/color"
 	"github.com/spf13/viper"
 )
+
+var v *viper.Viper
 
 type Commander interface {
 	AnalysisName() string
@@ -25,18 +32,6 @@ type Resources struct {
 	SingulartyExtraArgs string
 }
 
-type QueueOptions struct {
-	StartFromScratch bool
-	JobRunner        string
-}
-
-func NewQueueOptions() QueueOptions {
-	return QueueOptions{
-		StartFromScratch: viper.GetBool("start_from_scratch"),
-		JobRunner:        viper.GetString("job_runner"),
-	}
-}
-
 type Queue struct {
 	tasks []Commander
 }
@@ -46,6 +41,9 @@ func (q *Queue) Add(task Commander) {
 }
 
 func (q *Queue) Run() error {
+	if !v.IsSet("flowdir") {
+		InitConfig("", map[string]interface{}{})
+	}
 	if len(q.tasks) > 0 {
 		log.Printf("Starting workflow with %d jobs", len(q.tasks))
 	} else {
@@ -105,19 +103,19 @@ func freezeTask(c Commander) {
 func ResourcesFor(analysisName string) (Resources, error) {
 	// Should we provide default resource allocations or just fail?
 	// cpus=1;mem=1;time=1 is rarely going to be useful.
-	cpus := viper.GetInt(fmt.Sprintf("resources.%s.cpus", analysisName))
+	cpus := v.GetInt(fmt.Sprintf("resources.%s.cpus", analysisName))
 	if cpus == 0 {
 		return Resources{}, fmt.Errorf("no cpus resource for %s", analysisName)
 	}
-	memory := viper.GetInt(fmt.Sprintf("resources.%s.memory", analysisName))
+	memory := v.GetInt(fmt.Sprintf("resources.%s.memory", analysisName))
 	if memory == 0 {
 		return Resources{}, fmt.Errorf("no memory resource for %s", analysisName)
 	}
-	time := viper.GetInt(fmt.Sprintf("resources.%s.time", analysisName))
+	time := v.GetInt(fmt.Sprintf("resources.%s.time", analysisName))
 	if time == 0 {
 		return Resources{}, fmt.Errorf("no time resource for %s", analysisName)
 	}
-	container := viper.GetString(fmt.Sprintf("resources.%s.container", analysisName))
+	container := v.GetString(fmt.Sprintf("resources.%s.container", analysisName))
 	if container == "" {
 		return Resources{}, fmt.Errorf("no container resource for %s", analysisName)
 	}
@@ -129,52 +127,139 @@ func ResourcesFor(analysisName string) (Resources, error) {
 	}, nil
 }
 
-func init() {
+func InitConfig(fn string, overrides map[string]interface{}) {
 	bold := color.New(color.Bold).SprintfFunc()
 	defaults := map[string]interface{}{
+		"flowdir":            ".flow",
 		"start_from_scratch": false,
 		"job_runner":         "local",
 	}
+	v = viper.New()
 	for key, value := range defaults {
-		viper.SetDefault(key, value)
+		v.SetDefault(key, value)
 	}
-	viper.SetConfigName("flow")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath("$HOME/.config/flow")
-	viper.SetEnvPrefix("flow")
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	viper.AutomaticEnv()
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			// Config file not found
-			log.Printf("%s: no config found", bold("flow"))
-		} else {
+	v.SetConfigName("flow")
+	v.SetConfigType("yaml")
+	v.AddConfigPath("$HOME/.config/flow")
+	v.SetEnvPrefix("flow")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			// Config found but another error was produced
 			log.Fatalf("%s: Failed to read config file: %v", bold("flow"), err)
 		}
-	} else {
-		log.Printf("%s: Using config file %s", bold("flow"), viper.ConfigFileUsed())
 	}
-	localconfig := viper.New()
-	localconfig.SetConfigName("flow.yaml")
-	localconfig.SetConfigType("yaml")
-	localconfig.AddConfigPath(".")
-	localconfig.SetEnvPrefix("flow")
-	localconfig.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	localconfig.AutomaticEnv()
-	if err := localconfig.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			// Config file not found
-			log.Printf("no local config found")
-		} else {
-			log.Fatalf("%s: Failed to read local config file: %v", bold("flow"), err)
+	if fn != "" {
+		localconfig := viper.New()
+		localconfig.SetConfigFile(fn)
+		localconfig.SetEnvPrefix("flow")
+		localconfig.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+		localconfig.AutomaticEnv()
+		if err := localconfig.ReadInConfig(); err != nil {
+			if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+				log.Fatalf("%s: Failed to read local config file: %v", bold("flow"), err)
+			}
 		}
-	} else {
-		log.Printf("%s: Using local config file %s", bold("flow"), localconfig.ConfigFileUsed())
+		for _, key := range localconfig.AllKeys() {
+			v.Set(key, localconfig.Get(key))
+		}
 	}
+	for key, value := range overrides {
+		v.Set(key, value)
+	}
+}
 
-	for _, key := range localconfig.AllKeys() {
-		viper.Set(key, localconfig.Get(key))
+// should this be in the flow package to make in easier for users to run workflows?
+func RunWorkflow(fn string) error {
+	if !v.IsSet("flowdir") {
+		// If flowdir is not set, config has not been initialised. Should we
+		// return an error and force the user to init the config?
+		InitConfig("", map[string]interface{}{})
 	}
-	// log.Printf("container = %s", localc.GetString("resources.novoalign.container"))
+	workflowFunc, err := loadPlugin(fn)
+	if err != nil {
+		return fmt.Errorf("failed to load workflow: %v", err)
+	}
+	queue := &Queue{}
+	workflowFunc(queue)
+	if err := queue.Run(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func nilWorkflowFunc(q *Queue) {}
+
+func loadPlugin(fn string) (func(*Queue), error) {
+	log.Printf("Compiling workflow\n")
+	pluginFile, err := compileWorkflow(fn)
+	if err != nil {
+		return nilWorkflowFunc, fmt.Errorf("failed to compile workflow: %v", err)
+	}
+	p, err := plugin.Open(pluginFile)
+	if err != nil {
+		return nilWorkflowFunc, fmt.Errorf("failed to open plugin: %v", err)
+	}
+	pWorkflow, err := p.Lookup("Workflow")
+	if err != nil {
+		return nilWorkflowFunc, fmt.Errorf("failed to find Workflow function in plugin: %v", err)
+	}
+	workflowFunc, ok := pWorkflow.(func(*Queue))
+	if !ok {
+		return nilWorkflowFunc, fmt.Errorf("workflow func found, but it's type is %T", pWorkflow)
+	}
+	return workflowFunc, nil
+}
+
+func compileWorkflow(fn string) (string, error) {
+	dir, err := ioutil.TempDir(v.GetString("flowdir"), "workflow")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp directory: %v", err)
+	}
+	if err := copyFile(fn, fmt.Sprintf("%s/workflow.go", dir)); err != nil {
+		return "", fmt.Errorf("failed to copy workflow to temp directory: %v", err)
+	}
+	if err := createGoMod(dir); err != nil {
+		return "", err
+	}
+	cmdl := exec.Command("go", "build", "-buildmode=plugin", "workflow.go")
+	cmdl.Dir = dir
+	out, err := cmdl.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to compile workflow: %v\n%v", err, string(out))
+	}
+	return filepath.Join(dir, "workflow.so"), nil
+}
+
+func copyFile(src, dst string) error {
+	r, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	w, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+	_, err = io.Copy(w, r)
+	return err
+}
+
+// Is this really necessary?
+func createGoMod(dir string) error {
+	// Creating go.mod
+	w, err := os.Create(fmt.Sprintf("%s/go.mod", dir))
+	if err != nil {
+		return fmt.Errorf("failed to create go.mod: %v", err)
+	}
+	defer w.Close()
+	w.WriteString("module github.com/jje42/workflow\n")
+	w.WriteString("go 1.15\n")
+	return nil
+}
+
+func SafeWriteConfigAs(fn string) error {
+	return v.SafeWriteConfigAs(fn)
 }

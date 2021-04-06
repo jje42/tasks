@@ -3,123 +3,68 @@ package main
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
-	"plugin"
+	"time"
 
 	"github.com/jje42/flow"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var (
 	startFromScratch bool
 	jobRunner        string
+	configFile       string
 	rootCmd          = &cobra.Command{
-		Use:   "flow",
+		Use:   "flow [flags] <workflow.go>",
 		Short: "",
 		Long:  "",
+		Args:  cobra.ExactArgs(1),
 		Run:   myMain,
 	}
 )
 
-// To ensure the flow's config file is read before anything else is done.
-var _ flow.Queue
-
-func myMain(cmd *cobra.Command, args []string) {
-	if startFromScratch {
-		viper.Set("start_from_scratch", true)
-	}
-	if jobRunner != "" {
-		viper.Set("job_runner", jobRunner)
-	}
-	fn := args[0]
-	err := runWorkflow(fn)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func runWorkflow(fn string) error {
-	dir, err := ioutil.TempDir("", "workflow")
-	if err != nil {
-		return fmt.Errorf("failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(dir)
-	err = copyFile(fn, fmt.Sprintf("%s/workflow.go", dir))
-	if err != nil {
-		return fmt.Errorf("failed to copy workflow to temp directory: %v", err)
-	}
-
-	// Creating go.mod
-	err = createGoMod(dir)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Compiling workflow\n")
-	cmdl := exec.Command("go", "build", "-buildmode=plugin", "workflow.go")
-	cmdl.Dir = dir
-	out, err := cmdl.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to compile workflow: %v\n%v", err, string(out))
-	}
-
-	p, err := plugin.Open(fmt.Sprintf("%s/workflow.so", dir))
-	if err != nil {
-		return fmt.Errorf("failed to open plugin: %v", err)
-	}
-	pWorkflow, err := p.Lookup("Workflow")
-	if err != nil {
-		return fmt.Errorf("failed to find Workflow function in plugin: %v", err)
-	}
-	workflowFunc, ok := pWorkflow.(func(*flow.Queue))
-	if !ok {
-		return fmt.Errorf("workflow func found, but it's type is %T", pWorkflow)
-	}
-	queue := &flow.Queue{}
-	workflowFunc(queue)
-	err = queue.Run()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func main() {
 	rootCmd.Flags().BoolVarP(&startFromScratch, "start-from-scratch", "s", false, "Start from scratch")
 	rootCmd.Flags().StringVarP(&jobRunner, "job-runner", "j", "", "Job runner")
+	rootCmd.Flags().StringVarP(&configFile, "config", "c", "", "Config file")
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
 
-func copyFile(src, dst string) error {
-	r, err := os.Open(src)
-	if err != nil {
-		return err
+func myMain(cmd *cobra.Command, args []string) {
+	overrides := make(map[string]interface{})
+	if startFromScratch {
+		overrides["start_from_scratch"] = true
 	}
-	defer r.Close()
-	w, err := os.Create(dst)
-	if err != nil {
-		return err
+	if jobRunner != "" {
+		overrides["job_runner"] = jobRunner
 	}
-	defer w.Close()
-	_, err = io.Copy(w, r)
-	return err
+	flow.InitConfig(configFile, overrides)
+	timestamp := makeTimestamp()
+
+	// Log file ----------
+	logFile := fmt.Sprintf("flow_%s.log", timestamp)
+	logw, err := os.Create(logFile)
+	if err != nil {
+		log.Fatalf("Unable to create log file: %s: %v", logFile, err)
+	}
+	defer logw.Close()
+	log.SetOutput(io.MultiWriter(os.Stderr, logw))
+
+	// Config file ----------
+	flow.SafeWriteConfigAs(fmt.Sprintf("flow_config_%s.yaml", timestamp))
+
+	if err := flow.RunWorkflow(args[0]); err != nil {
+		log.Fatal(err)
+	}
 }
 
-// Is this really necessary?
-func createGoMod(dir string) error {
-	// Creating go.mod
-	w, err := os.Create(fmt.Sprintf("%s/go.mod", dir))
-	if err != nil {
-		return fmt.Errorf("failed to create go.mod: %v", err)
-	}
-	defer w.Close()
-	w.WriteString("module github.com/jje42/workflow\n")
-	w.WriteString("go 1.15\n")
-	return nil
+func makeTimestamp() string {
+	t := time.Now()
+	return fmt.Sprintf(
+		"%d-%02d-%02d_%02d%02d%02d",
+		t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(),
+	)
 }

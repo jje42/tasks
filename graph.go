@@ -13,7 +13,6 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/google/uuid"
-	"github.com/spf13/viper"
 )
 
 type job struct {
@@ -127,7 +126,7 @@ func dependenciesFor(j *job, allJobs []*job) []*job {
 func (g graph) Process() error {
 	var runner Runner
 	var err error
-	switch runnerStr := viper.GetString("job_runner"); runnerStr {
+	switch runnerStr := v.GetString("job_runner"); runnerStr {
 	case "pbs":
 		runner, err = NewPBSRunner()
 		if err != nil {
