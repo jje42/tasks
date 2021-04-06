@@ -3,9 +3,7 @@ package flow
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -30,40 +28,30 @@ func NewPBSRunner() (*PBSRunner, error) {
 	return r, nil
 }
 
-func (r *PBSRunner) Run(j *job) error {
-	dir, err := ioutil.TempDir("", "flow")
+func (r *PBSRunner) Run(ctx executionContext) error {
+	jobName := ctx.job.Cmd.AnalysisName()
+	resources, err := ctx.job.Cmd.Resources()
 	if err != nil {
-		return fmt.Errorf("failed to create temp directory: %v", err)
-	}
-	// Do not defer removal of temp directory. PBS will queue the job; it will
-	// almost certainly be run after this function exits.
-	scriptFn := filepath.Join(dir, "script.sh")
-	if err := ioutil.WriteFile(scriptFn, []byte(j.Command()), 0664); err != nil {
-		return fmt.Errorf("failed to write script content: %v, %v", scriptFn, err)
-	}
-	jobName := j.Cmd.AnalysisName()
-	resources, err := j.Cmd.Resources()
-	if err != nil {
-		return fmt.Errorf("failed to get resources for job: %s: %v", j.UUID, err)
+		return fmt.Errorf("failed to get resources for job: %s: %v", ctx.job.UUID, err)
 	}
 	cmd := exec.Command(
 		"qsub",
 		"-N", jobName,
-		"-o", j.Stdout,
+		"-o", ctx.job.Stdout,
 		"-j", "oe",
 		"-l", fmt.Sprintf("select=1:ncpus=%d:mem=%d", resources.CPUs, resources.Memory),
 		"-l", fmt.Sprintf("walltime=%02d:00:00", resources.Time),
 		"--",
 		"/bin/bash",
-		scriptFn,
+		ctx.script,
 	)
-	cmd.Dir = dir
+	cmd.Dir = ctx.dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("unable to start job: %v: %v: %v", j.UUID, err, string(out))
+		return fmt.Errorf("unable to start job: %v: %v: %v", ctx.job.UUID, err, string(out))
 	}
-	j.ID = strings.TrimSuffix(string(out), "\n")
-	r.jobIDs[j.UUID] = j.ID
+	ctx.job.ID = strings.TrimSuffix(string(out), "\n")
+	r.jobIDs[ctx.job.UUID] = ctx.job.ID
 	return nil
 }
 

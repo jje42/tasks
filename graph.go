@@ -3,6 +3,7 @@ package flow
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -180,7 +181,11 @@ func (g graph) Process() error {
 				// display until after the job has completed. Not sure what's
 				// better.
 				displayJob(pending)
-				err := runner.Run(pending)
+				ctx, err := newExecutionContext(pending)
+				if err != nil {
+					return fmt.Errorf("failed to create execution context for %s: %v", pending.UUID, err)
+				}
+				err = runner.Run(ctx)
 				if err != nil {
 					return fmt.Errorf("unable to run job: %v", err)
 				}
@@ -255,6 +260,54 @@ func (g graph) Process() error {
 		log.Printf("Workflow completed %s", greenBold("SUCCESSFULLY"))
 	}
 	log.Printf("Completed with %d completed and %d failed (running = %d)", len(g.completed), len(g.failed), len(g.running))
+	return nil
+}
+
+type executionContext struct {
+	job    *job
+	dir    string
+	script string
+}
+
+func newExecutionContext(j *job) (executionContext, error) {
+	cxt := executionContext{
+		job: j,
+	}
+	var err error
+	cxt.dir, err = ioutil.TempDir("", "flow")
+	if err != nil {
+		return executionContext{}, fmt.Errorf("failed to create temp directory: %v", err)
+	}
+	jobFn := filepath.Join(cxt.dir, "job.sh")
+	cxt.script = jobFn
+	scriptFn := filepath.Join(cxt.dir, "script.sh")
+	if err := createJobFile(jobFn, scriptFn, j); err != nil {
+		return executionContext{}, fmt.Errorf("unable to create job file: %v", err)
+	}
+	if err := createScriptFile(scriptFn, j); err != nil {
+		return executionContext{}, fmt.Errorf("unable to create script file: %v", err)
+	}
+	return cxt, nil
+}
+
+func createJobFile(jobFile, scriptFile string, j *job) error {
+	r, err := j.Cmd.Resources()
+	if err != nil {
+		return fmt.Errorf("failed to get resources for job: %v: %v", j.UUID, err)
+	}
+	shell := "/bin/bash"
+	content := fmt.Sprintf(`singularity exec %s %s %s %s`, r.SingulartyExtraArgs, r.Container, shell, scriptFile)
+	if err := ioutil.WriteFile(jobFile, []byte(content), 0664); err != nil {
+		return fmt.Errorf("failed to write job script content: %v", err)
+	}
+	return nil
+}
+
+func createScriptFile(scriptFile string, j *job) error {
+	content := j.Command()
+	if err := ioutil.WriteFile(scriptFile, []byte(content), 0664); err != nil {
+		return fmt.Errorf("failed to write script content: %v", err)
+	}
 	return nil
 }
 
