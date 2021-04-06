@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -11,28 +12,41 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/google/uuid"
+	"github.com/spf13/viper"
 )
 
 type job struct {
-	Cmd                   Tasker
-	UUID                  uuid.UUID
-	ID                    string
-	Inputs                []string
-	Outputs               []string
-	Stdout                string
-	DoneFile              string
-	runnable              bool
-	hasCompleted          bool
-	completedSuccessfully bool
-	Dependencies          []*job
+	Cmd          Commander
+	UUID         uuid.UUID
+	ID           string
+	Inputs       []string
+	Outputs      []string
+	Stdout       string
+	doneFile     string
+	Dependencies []*job
+	hasCompleted bool
 }
 
+// Command takes the original command line and allows adding pre- or post-
+// commands.
 func (j job) Command() string {
 	return fmt.Sprintf(`set -o errexit
 set -o pipefail
 set -o verbose
 env
 %s`, j.Cmd.Command())
+}
+
+func (j job) isRunnable() bool {
+	if j.hasCompleted {
+		return false
+	}
+	for _, d := range j.Dependencies {
+		if !d.hasCompleted {
+			return false
+		}
+	}
+	return true
 }
 
 type graph struct {
@@ -43,28 +57,56 @@ type graph struct {
 	failed    []*job
 }
 
-func newGraph(cmds []Tasker) graph {
+func newGraph(cmds []Commander) (graph, error) {
 	g := graph{}
 	for _, cmd := range cmds {
 		job := &job{
-			Cmd:      cmd,
-			UUID:     uuid.New(),
-			Inputs:   cmdInputs(cmd),
-			Outputs:  cmdOutputs(cmd),
-			runnable: true,
+			Cmd:     cmd,
+			UUID:    uuid.New(),
+			Inputs:  cmdInputs(cmd),
+			Outputs: cmdOutputs(cmd),
 		}
 		// What if the job has no outputs? Is this an error, if so we should
 		// check for this.
 		job.Stdout = fmt.Sprintf("%s.out", job.Outputs[0])
 		dir, file := filepath.Split(job.Outputs[0])
-		job.DoneFile = filepath.Join(dir, fmt.Sprintf(".%s.done", file))
+		job.doneFile = filepath.Join(dir, fmt.Sprintf(".%s.done", file))
 		g.jobs = append(g.jobs, job)
 	}
 	for _, j := range g.jobs {
 		j.Dependencies = dependenciesFor(j, g.jobs)
 		g.pending = append(g.pending, j)
 	}
-	return g
+
+	startFromScratch := true
+	if startFromScratch {
+		for _, j := range g.jobs {
+			err := os.Remove(j.doneFile)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return g, fmt.Errorf("unable to remove done file: %s: %v", j.doneFile, err)
+			}
+		}
+	}
+	// If the done file exists for any pending job, mark it as complete and move
+	// it to the completed list.
+	pendingList := make([]*job, len(g.pending))
+	copy(pendingList, g.pending)
+	for _, p := range pendingList {
+		ok, err := fileExists(p.doneFile)
+		if err != nil {
+			return g, fmt.Errorf("unable to determine if file exists: %s: %v", p.doneFile, err)
+		}
+		if ok {
+			p.hasCompleted = true
+			idx, err := jobIndex(p, g.pending)
+			if err != nil {
+				return g, fmt.Errorf("unable to find job index: %s: %v", p.UUID, err)
+			}
+			g.completed = append(g.completed, p)
+			g.pending = append(g.pending[:idx], g.pending[idx+1:]...)
+		}
+	}
+	return g, nil
 }
 
 func dependenciesFor(j *job, allJobs []*job) []*job {
@@ -84,22 +126,27 @@ func dependenciesFor(j *job, allJobs []*job) []*job {
 func (g graph) Process() error {
 	var runner Runner
 	var err error
-	runnerStr := ConfigGetString("runner")
-	if runnerStr != "" {
-		log.Printf("Using runner %s", runnerStr)
-	} else {
-		log.Printf("Using default runner: local")
-	}
-	switch runnerStr {
+	switch runnerStr := viper.GetString("job_runner"); runnerStr {
 	case "pbs":
 		runner, err = NewPBSRunner()
 		if err != nil {
 			return err
 		}
-	default:
+	case "local":
 		runner = NewLocalRunner()
+	case "dummy":
+		runner = DummyRunner{}
+	default:
+		log.Fatalf("Unknown runner requested: %s", runnerStr)
 	}
-	jobReportfile := "jobreport.csv"
+	// "yyyy-MM-DD_HHmmss"
+	t := time.Now()
+	timestamp := fmt.Sprintf(
+		"%d-%02d-%02d_%02d%02d%02d.csv",
+		t.Year(), t.Month(), t.Day(),
+		t.Hour(), t.Minute(), t.Second(),
+	)
+	jobReportfile := fmt.Sprintf("jobreport_%s.csv", timestamp)
 	w, err := os.Create(jobReportfile)
 	if err != nil {
 		return fmt.Errorf("unable to create job report file: %v", err)
@@ -110,34 +157,66 @@ func (g graph) Process() error {
 		return fmt.Errorf("unable to create job report: %v", err)
 	}
 	for {
-		for _, pending := range g.pending {
-			displayJob(pending)
-			err := runner.Run(pending)
-			if err != nil {
-
-			}
-			idx, err := jobIndex(pending, g.pending)
-			if err != nil {
-				return fmt.Errorf("unable to find job in pending list, %v", pending.UUID)
-			}
-			g.pending = append(g.pending[:idx], g.pending[idx+1:]...)
-			g.running = append(g.running, pending)
+		if len(g.pending) == 0 && len(g.running) == 0 {
+			log.Printf("There are no more jobs to run")
+			break
 		}
-		for _, running := range g.running {
+		runnable := 0
+		for _, pending := range g.pending {
+			if pending.isRunnable() {
+				runnable += 1
+			}
+			log.Printf("Pending: %s, %v", pending.UUID, pending.isRunnable())
+		}
+		log.Printf("Pending: %d, with %d runnable", len(g.pending), runnable)
+		pendingList := make([]*job, len(g.pending))
+		copy(pendingList, g.pending)
+		for _, pending := range pendingList {
+			if pending.isRunnable() {
+				// The job will not have an ID until after runner.Run is called
+				// (possibly not even then). If we display the job after running
+				// it we will get the PBS job ID when using the PBS runner;
+				// however, when using the local runner, there will be no
+				// display until after the job has completed. Not sure what's
+				// better.
+				displayJob(pending)
+				err := runner.Run(pending)
+				if err != nil {
+					return fmt.Errorf("unable to run job: %v", err)
+				}
+				idx, err := jobIndex(pending, g.pending)
+				if err != nil {
+					return err
+				}
+				g.pending = append(g.pending[:idx], g.pending[idx+1:]...)
+				g.running = append(g.running, pending)
+			} else {
+				log.Printf("Job is not runnable: %s", pending.UUID)
+			}
+		}
+		runningList := make([]*job, len(g.running))
+		copy(runningList, g.running)
+		for _, running := range runningList {
 			completed, err := runner.Completed(running)
 			if err != nil {
-
+				return fmt.Errorf("unable to determine job state: %s: %s", running.ID, err)
 			}
 			if completed {
+				running.hasCompleted = true
 				successful, err := runner.CompletedSuccessfully(running)
 				if err != nil {
-
+					return fmt.Errorf("unable to determine job state: %s: %s", running.ID, err)
 				}
 				idx, err := jobIndex(running, g.running)
 				if err != nil {
-
+					return err
 				}
 				if successful {
+					// done files are only created on successful completion of a job.
+					_, err := os.Create(running.doneFile)
+					if err != nil {
+						return fmt.Errorf("unable to create done file for job: %s: %s", running.ID, err)
+					}
 					resources, err := runner.ResourcesUsed(running)
 					if err != nil {
 						log.Printf("Failed to get resources for job: %v: %v", running.UUID, err)
@@ -157,63 +236,7 @@ func (g graph) Process() error {
 				}
 			}
 		}
-
-		runnables := findRunnable(g.jobs)
-		if len(runnables) == 0 {
-			log.Printf("There are no jobs that are runnable")
-			break
-		}
-		for _, runnable := range runnables {
-			displayJob(runnable)
-			err = runner.Run(runnable)
-			if err != nil {
-				return fmt.Errorf("failed to run job: %v", err)
-			}
-			g.running = append(g.running, runnable)
-		}
-		i := 0
-		for _, running := range g.running {
-			// Job can either be still running, completed
-			// successfully or completed unsuccessfully.
-			completed, err := runner.Completed(running)
-			if err != nil {
-				return fmt.Errorf("failed to determine if job has completed: %s: %s", running.UUID, err)
-			}
-			if completed {
-				running.hasCompleted = true
-				successful, err := runner.CompletedSuccessfully(running)
-				if err != nil {
-					return fmt.Errorf("failed to determine if job completed successfully: %v: %v", running.UUID, err)
-				}
-				if successful {
-					running.completedSuccessfully = true
-					resources, err := runner.ResourcesUsed(running)
-					if err != nil {
-						log.Printf("failed to get resources used for job: %v: %v", running.UUID, err)
-					} else {
-						// err = updateResourcesUsedFile(resources)
-						err = report.Add(running, resources)
-						if err != nil {
-							log.Printf("Unable to update resources file: %v", err)
-						}
-					}
-					g.completed = append(g.completed, running)
-				} else {
-					bold := color.New(color.Bold, color.FgRed).SprintFunc()
-					log.Printf("%s: job failed: %v, %v: stdout written to %s", bold("ERROR"), running.UUID, running.ID, running.Stdout)
-					running.completedSuccessfully = false
-					g.failed = append(g.failed, running)
-				}
-
-			} else {
-				g.running[i] = running
-				i++
-			}
-		}
-		for j := i; j < len(g.running); j++ {
-			g.running[j] = nil
-		}
-		g.running = g.running[:i]
+		log.Printf("%d pending, %d running, %d done", len(g.pending), len(g.running), len(g.completed)+len(g.failed))
 		time.Sleep(3 * time.Second)
 	}
 
@@ -235,36 +258,8 @@ func (g graph) Process() error {
 	return nil
 }
 
-func findRunnable(jobs []*job) []*job {
-	r := []*job{}
-	for _, job := range jobs {
-		runnable := true
-		for _, d := range job.Dependencies {
-			if !d.completedSuccessfully {
-				runnable = false
-			}
-		}
-		if job.hasCompleted {
-			runnable = false
-		}
-		if runnable {
-			r = append(r, job)
-		}
-	}
-	return r
-}
-
-// func allDone(jobs []*job) bool {
-// 	for _, j := range jobs {
-// 		if !j.HasCompleted {
-// 			return false
-// 		}
-// 	}
-// 	return true
-// }
-
 // Return the value (i.e., the path) of all input fields.
-func cmdTag(c Tasker, t string) []string {
+func cmdTag(c Commander, t string) []string {
 	inputs := []string{}
 	v := reflect.ValueOf(c).Elem()
 	for i := 0; i < v.NumField(); i++ {
@@ -286,12 +281,12 @@ func cmdTag(c Tasker, t string) []string {
 	return inputs
 }
 
-func cmdInputs(c Tasker) []string {
+func cmdInputs(c Commander) []string {
 	return cmdTag(c, "input")
 }
 
 // Return the value (i.e., the path) of all output fields.
-func cmdOutputs(c Tasker) []string {
+func cmdOutputs(c Commander) []string {
 	return cmdTag(c, "output")
 }
 
@@ -316,11 +311,6 @@ type resourcesUsed struct {
 	ExecHost        string
 	ExitStatus      int
 }
-
-// func updateResourcesUsedFile(r resourcesUsed) error {
-// 	fmt.Printf("%+v\n", r)
-// 	return nil
-// }
 
 func displayJob(j *job) error {
 	r, err := j.Cmd.Resources()
@@ -351,7 +341,7 @@ func displayJob(j *job) error {
 		bold("Analysis Name"), j.Cmd.AnalysisName(),
 		bold("Resources"), r.CPUs, r.Memory, r.Time,
 		bold("Stdout"), j.Stdout,
-		bold("DoneFile"), j.DoneFile,
+		bold("DoneFile"), j.doneFile,
 		bold("Container"), r.Container,
 		bold("Extra Args"), r.SingulartyExtraArgs,
 		bold("Script"), indentedCmd)
@@ -364,5 +354,15 @@ func jobIndex(j *job, list []*job) (int, error) {
 			return i, nil
 		}
 	}
-	return -1, fmt.Errorf("unable to find job in running list, %v", j.UUID)
+	return -1, fmt.Errorf("unable to find job in list, %v", j.UUID)
+}
+
+func fileExists(fn string) (bool, error) {
+	if _, err := os.Stat(fn); err == nil {
+		return true, nil
+	} else if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else {
+		return false, err
+	}
 }

@@ -11,10 +11,13 @@ import (
 
 	"github.com/jje42/flow"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var (
-	rootCmd = &cobra.Command{
+	startFromScratch bool
+	jobRunner        string
+	rootCmd          = &cobra.Command{
 		Use:   "flow",
 		Short: "",
 		Long:  "",
@@ -26,6 +29,12 @@ var (
 var _ flow.Queue
 
 func myMain(cmd *cobra.Command, args []string) {
+	if startFromScratch {
+		viper.Set("start_from_scratch", true)
+	}
+	if jobRunner != "" {
+		viper.Set("job_runner", jobRunner)
+	}
 	fn := args[0]
 	err := runWorkflow(fn)
 	if err != nil {
@@ -80,6 +89,8 @@ func runWorkflow(fn string) error {
 }
 
 func main() {
+	rootCmd.Flags().BoolVarP(&startFromScratch, "start-from-scratch", "s", false, "Start from scratch")
+	rootCmd.Flags().StringVarP(&jobRunner, "job-runner", "j", "", "Job runner")
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -110,6 +121,5 @@ func createGoMod(dir string) error {
 	defer w.Close()
 	w.WriteString("module github.com/jje42/workflow\n")
 	w.WriteString("go 1.15\n")
-	w.WriteString("replace github.com/jje42/flow => /home/ellisjj/scratch/flow\n")
 	return nil
 }

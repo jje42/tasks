@@ -95,6 +95,7 @@ func (r *LocalRunner) Run(j *job) error {
 	r.cmd.Stdout = w
 	r.cmd.Stderr = w
 	r.err = r.cmd.Run()
+	j.ID = j.UUID.String()
 	return nil // this is the job was run without error, not that the job completed successfully.
 }
 
