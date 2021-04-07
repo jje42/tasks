@@ -6,9 +6,11 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/fatih/color"
@@ -156,6 +158,22 @@ func (g graph) Process() error {
 	if err != nil {
 		return fmt.Errorf("unable to create job report: %v", err)
 	}
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	// Set a goroutine to gracefully shutdown running jobs if SIGINT or SIGTERM
+	// recieved.
+	go func() {
+		<-sigs
+		for _, job := range g.running {
+			err := runner.Kill(job)
+			if err != nil {
+				log.Println(err)
+			}
+		}
+		os.Exit(1)
+	}()
+
 	for {
 		if len(g.pending) == 0 && len(g.running) == 0 {
 			log.Printf("There are no more jobs to run")

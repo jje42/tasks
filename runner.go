@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 )
 
 type Runner interface {
@@ -12,6 +13,7 @@ type Runner interface {
 	Completed(*job) (bool, error)
 	CompletedSuccessfully(*job) (bool, error)
 	ResourcesUsed(*job) (resourcesUsed, error)
+	Kill(*job) error
 }
 
 // DummyRunner does not actually run jobs, it just accepts jobs to run and
@@ -32,6 +34,10 @@ func (r DummyRunner) CompletedSuccessfully(j *job) (bool, error) {
 
 func (r DummyRunner) ResourcesUsed(j *job) (resourcesUsed, error) {
 	return resourcesUsed{}, nil
+}
+
+func (r DummyRunner) Kill(j *job) error {
+	return nil
 }
 
 var _ Runner = DummyRunner{}
@@ -70,6 +76,15 @@ func (r *LocalRunner) CompletedSuccessfully(j *job) (bool, error) {
 
 func (r *LocalRunner) ResourcesUsed(j *job) (resourcesUsed, error) {
 	return resourcesUsed{}, nil
+}
+
+func (r *LocalRunner) Kill(j *job) error {
+	if r.cmd != nil {
+		cmd := exec.Command("kill", "-s", "SIGTERM", strconv.Itoa(r.cmd.Process.Pid))
+		err := cmd.Run()
+		return fmt.Errorf("unable to kill job (PID %d): %v", r.cmd.Process.Pid, err)
+	}
+	return nil
 }
 
 var _ Runner = &LocalRunner{}

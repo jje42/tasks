@@ -2,6 +2,7 @@ package flow
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -112,6 +113,18 @@ func (r *PBSRunner) ResourcesUsed(j *job) (resourcesUsed, error) {
 		ExecHost:        q.ExecHost,
 		ExitStatus:      q.ExitStatus,
 	}, nil
+}
+
+func (r *PBSRunner) Kill(j *job) error {
+	if j.ID == "" {
+		return errors.New("job has no ID")
+	}
+	cmd := exec.Command("qdel", j.ID)
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("unable to kill job %s: %v", j.ID, err)
+	}
+	return nil
 }
 
 type qstatResultList struct {
