@@ -24,11 +24,11 @@ type Commander interface {
 }
 
 type Resources struct {
-	CPUs                int
-	Memory              int
-	Time                int
-	Container           string
-	SingulartyExtraArgs string
+	CPUs                 int
+	Memory               int
+	Time                 int
+	Container            string
+	SingularityExtraArgs string
 }
 
 type Queue struct {
