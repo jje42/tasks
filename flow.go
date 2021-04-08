@@ -223,16 +223,16 @@ func compileWorkflow(fn string) (string, error) {
 	if err := copyFile(fn, fmt.Sprintf("%s/workflow.go", dir)); err != nil {
 		return "", fmt.Errorf("failed to copy workflow to temp directory: %v", err)
 	}
-	c := exec.Command("go", "mod", "init", "github.com/jje42/workflow")
-	c.Dir = dir
-	if err := c.Run(); err != nil {
-		return "", fmt.Errorf("failed to create go.mod: %v", err)
-	}
-	c = exec.Command("go", "mod", "tidy")
-	c.Dir = dir
-	if err := c.Run(); err != nil {
-		return "", fmt.Errorf("failed to run go mod tidy: %v", err)
-	}
+	// c := exec.Command("go", "mod", "init", "github.com/jje42/workflow")
+	// c.Dir = dir
+	// if err := c.Run(); err != nil {
+	// 	return "", fmt.Errorf("failed to create go.mod: %v", err)
+	// }
+	// c = exec.Command("go", "mod", "tidy")
+	// c.Dir = dir
+	// if err := c.Run(); err != nil {
+	// 	return "", fmt.Errorf("failed to run go mod tidy: %v", err)
+	// }
 
 	cmdl := exec.Command("go", "build", "-buildmode=plugin", "workflow.go")
 	cmdl.Dir = dir
