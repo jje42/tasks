@@ -40,7 +40,7 @@ func (r *PBSRunner) Run(ctx executionContext) error {
 		"-N", jobName,
 		"-o", ctx.job.Stdout,
 		"-j", "oe",
-		"-l", fmt.Sprintf("select=1:ncpus=%d:mem=%d", resources.CPUs, resources.Memory),
+		"-l", fmt.Sprintf("select=1:ncpus=%d:mem=%dgb", resources.CPUs, resources.Memory),
 		"-l", fmt.Sprintf("walltime=%02d:00:00", resources.Time),
 		"--",
 		"/bin/bash",
