@@ -283,7 +283,7 @@ func newExecutionContext(j *job) (executionContext, error) {
 		job: j,
 	}
 	var err error
-	cxt.dir, err = ioutil.TempDir("", "flow")
+	cxt.dir, err = ioutil.TempDir(v.GetString("flowdir"), "flow")
 	if err != nil {
 		return executionContext{}, fmt.Errorf("failed to create temp directory: %v", err)
 	}
