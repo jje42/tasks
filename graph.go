@@ -179,14 +179,6 @@ func (g graph) Process() error {
 			log.Printf("There are no more jobs to run")
 			break
 		}
-		runnable := 0
-		for _, pending := range g.pending {
-			if pending.isRunnable() {
-				runnable += 1
-			}
-			log.Printf("Pending: %s, %v", pending.UUID, pending.isRunnable())
-		}
-		log.Printf("Pending: %d, with %d runnable", len(g.pending), runnable)
 		pendingList := make([]*job, len(g.pending))
 		copy(pendingList, g.pending)
 		for _, pending := range pendingList {
