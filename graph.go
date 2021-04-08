@@ -305,7 +305,11 @@ func createJobFile(jobFile, scriptFile string, j *job) error {
 		return fmt.Errorf("failed to get resources for job: %v: %v", j.UUID, err)
 	}
 	shell := "/bin/bash"
-	content := fmt.Sprintf(`singularity exec %s %s %s %s`, r.SingularityExtraArgs, r.Container, shell, scriptFile)
+	singularityBin := v.GetString("singularity_bin")
+	if singularityBin == "" {
+		singularityBin = "singularity"
+	}
+	content := fmt.Sprintf(`%s exec %s %s %s %s`, singularityBin, r.SingularityExtraArgs, r.Container, shell, scriptFile)
 	if err := ioutil.WriteFile(jobFile, []byte(content), 0664); err != nil {
 		return fmt.Errorf("failed to write job script content: %v", err)
 	}
