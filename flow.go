@@ -12,7 +12,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/fatih/color"
 	"github.com/spf13/viper"
 )
 
@@ -127,8 +126,7 @@ func ResourcesFor(analysisName string) (Resources, error) {
 	}, nil
 }
 
-func InitConfig(fn string, overrides map[string]interface{}) {
-	bold := color.New(color.Bold).SprintfFunc()
+func InitConfig(fn string, overrides map[string]interface{}) error {
 	defaults := map[string]interface{}{
 		"flowdir":            ".flow",
 		"start_from_scratch": false,
@@ -147,7 +145,7 @@ func InitConfig(fn string, overrides map[string]interface{}) {
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			// Config found but another error was produced
-			log.Fatalf("%s: Failed to read config file: %v", bold("flow"), err)
+			return fmt.Errorf("failed to read config file: %v", err)
 		}
 	}
 	if fn != "" {
@@ -158,7 +156,7 @@ func InitConfig(fn string, overrides map[string]interface{}) {
 		localconfig.AutomaticEnv()
 		if err := localconfig.ReadInConfig(); err != nil {
 			if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-				log.Fatalf("%s: Failed to read local config file: %v", bold("flow"), err)
+				return fmt.Errorf("failed to read local config file: %v", err)
 			}
 		}
 		for _, key := range localconfig.AllKeys() {
@@ -168,6 +166,11 @@ func InitConfig(fn string, overrides map[string]interface{}) {
 	for key, value := range overrides {
 		v.Set(key, value)
 	}
+	err := os.MkdirAll(v.GetString("flowdir"), 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create flowdir: %s: %v", v.GetString("flowdir"), err)
+	}
+	return nil
 }
 
 // should this be in the flow package to make in easier for users to run workflows?
