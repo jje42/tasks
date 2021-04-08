@@ -210,12 +210,14 @@ func (g graph) Process() error {
 		}
 		runningList := make([]*job, len(g.running))
 		copy(runningList, g.running)
+		changed := false
 		for _, running := range runningList {
 			completed, err := runner.Completed(running)
 			if err != nil {
 				return fmt.Errorf("unable to determine job state: %s: %s", running.ID, err)
 			}
 			if completed {
+				changed = true
 				running.hasCompleted = true
 				successful, err := runner.CompletedSuccessfully(running)
 				if err != nil {
@@ -250,7 +252,10 @@ func (g graph) Process() error {
 				}
 			}
 		}
-		log.Printf("%d pending, %d running, %d done", len(g.pending), len(g.running), len(g.completed)+len(g.failed))
+		// Only want to display this is something changed, but also initially.
+		if changed {
+			log.Printf("%d pending, %d running, %d done", len(g.pending), len(g.running), len(g.completed)+len(g.failed))
+		}
 		time.Sleep(3 * time.Second)
 	}
 
