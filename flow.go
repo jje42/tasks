@@ -223,9 +223,17 @@ func compileWorkflow(fn string) (string, error) {
 	if err := copyFile(fn, fmt.Sprintf("%s/workflow.go", dir)); err != nil {
 		return "", fmt.Errorf("failed to copy workflow to temp directory: %v", err)
 	}
-	if err := createGoMod(dir); err != nil {
-		return "", err
+	c := exec.Command("go", "mod", "init", "github.com/jje42/workflow")
+	c.Dir = dir
+	if err := c.Run(); err != nil {
+		return "", fmt.Errorf("failed to create go.mod: %v", err)
 	}
+	c = exec.Command("go", "mod", "tidy")
+	c.Dir = dir
+	if err := c.Run(); err != nil {
+		return "", fmt.Errorf("failed to run go mod tidy: %v", err)
+	}
+
 	cmdl := exec.Command("go", "build", "-buildmode=plugin", "workflow.go")
 	cmdl.Dir = dir
 	out, err := cmdl.CombinedOutput()
@@ -248,19 +256,6 @@ func copyFile(src, dst string) error {
 	defer w.Close()
 	_, err = io.Copy(w, r)
 	return err
-}
-
-// Is this really necessary?
-func createGoMod(dir string) error {
-	// Creating go.mod
-	w, err := os.Create(fmt.Sprintf("%s/go.mod", dir))
-	if err != nil {
-		return fmt.Errorf("failed to create go.mod: %v", err)
-	}
-	defer w.Close()
-	w.WriteString("module github.com/jje42/workflow\n")
-	w.WriteString("go 1.15\n")
-	return nil
 }
 
 func SafeWriteConfigAs(fn string) error {
