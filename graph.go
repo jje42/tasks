@@ -175,89 +175,29 @@ func (g graph) Process() error {
 		os.Exit(1)
 	}()
 
+	_, err = g.submitPending(runner)
+	if err != nil {
+		return fmt.Errorf("failed to submit jobs: %v", err)
+	}
+	log.Printf("%d pending, %d running, %d done", len(g.pending), len(g.running), len(g.completed)+len(g.failed))
+
 	for {
+		nCompleted, err := g.checkCompleted(runner, report)
+		if err != nil {
+			return fmt.Errorf("failed to check running jobs: %v", err)
+		}
+		nSubmitted, err := g.submitPending(runner)
+		if err != nil {
+			return fmt.Errorf("failed to submit jobs: %v", err)
+		}
+		if nCompleted > 0 || nSubmitted > 0 {
+			log.Printf("%d pending, %d running, %d done", len(g.pending), len(g.running), len(g.completed)+len(g.failed))
+		}
 		if len(g.pending) == 0 && len(g.running) == 0 {
 			log.Printf("There are no more jobs to run")
 			break
 		}
-		pendingList := make([]*job, len(g.pending))
-		copy(pendingList, g.pending)
-		for _, pending := range pendingList {
-			if pending.isRunnable() {
-				// The job will not have an ID until after runner.Run is called
-				// (possibly not even then). If we display the job after running
-				// it we will get the PBS job ID when using the PBS runner;
-				// however, when using the local runner, there will be no
-				// display until after the job has completed. Not sure what's
-				// better.
-				displayJob(pending)
-				ctx, err := newExecutionContext(pending)
-				if err != nil {
-					return fmt.Errorf("failed to create execution context for %s: %v", pending.UUID, err)
-				}
-				err = runner.Run(ctx)
-				if err != nil {
-					return fmt.Errorf("unable to run job: %v", err)
-				}
-				idx, err := jobIndex(pending, g.pending)
-				if err != nil {
-					return err
-				}
-				g.pending = append(g.pending[:idx], g.pending[idx+1:]...)
-				g.running = append(g.running, pending)
-			} else {
-				log.Printf("Job is not runnable: %s", pending.UUID)
-			}
-		}
-		runningList := make([]*job, len(g.running))
-		copy(runningList, g.running)
-		changed := false
-		for _, running := range runningList {
-			completed, err := runner.Completed(running)
-			if err != nil {
-				return fmt.Errorf("unable to determine job state: %s: %s", running.ID, err)
-			}
-			if completed {
-				changed = true
-				running.hasCompleted = true
-				successful, err := runner.CompletedSuccessfully(running)
-				if err != nil {
-					return fmt.Errorf("unable to determine job state: %s: %s", running.ID, err)
-				}
-				idx, err := jobIndex(running, g.running)
-				if err != nil {
-					return err
-				}
-				if successful {
-					// done files are only created on successful completion of a job.
-					_, err := os.Create(running.doneFile)
-					if err != nil {
-						return fmt.Errorf("unable to create done file for job: %s: %s", running.ID, err)
-					}
-					resources, err := runner.ResourcesUsed(running)
-					if err != nil {
-						log.Printf("Failed to get resources for job: %v: %v", running.UUID, err)
-					} else {
-						err = report.Add(running, resources)
-						if err != nil {
-							log.Printf("Unable to update job report file: %v", err)
-						}
-					}
-					g.completed = append(g.completed, running)
-					g.running = append(g.running[:idx], g.running[idx+1:]...)
-				} else {
-					bold := color.New(color.Bold, color.FgRed).SprintfFunc()
-					log.Printf("%s: job failed: %v, %v: stdout written to %s", bold("ERROR"), running.UUID, running.ID, running.Stdout)
-					g.failed = append(g.failed, running)
-					g.running = append(g.running[:idx], g.running[idx+1:]...)
-				}
-			}
-		}
-		// Only want to display this is something changed, but also initially.
-		if changed {
-			log.Printf("%d pending, %d running, %d done", len(g.pending), len(g.running), len(g.completed)+len(g.failed))
-		}
-		time.Sleep(3 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 
 	err = report.Flush()
@@ -276,6 +216,82 @@ func (g graph) Process() error {
 	}
 	log.Printf("Completed with %d completed and %d failed (running = %d)", len(g.completed), len(g.failed), len(g.running))
 	return nil
+}
+
+func (g *graph) submitPending(r Runner) (int, error) {
+	submitted := 0
+	pendingList := make([]*job, len(g.pending))
+	copy(pendingList, g.pending)
+	for _, pending := range pendingList {
+		if pending.isRunnable() {
+			displayJob(pending)
+			ctx, err := newExecutionContext(pending)
+			if err != nil {
+				return submitted, fmt.Errorf("failed to create execution context for %s: %v", pending.UUID, err)
+			}
+			if err := r.Run(ctx); err != nil {
+				return submitted, fmt.Errorf("unable to run job: %v", err)
+			}
+			idx, err := jobIndex(pending, g.pending)
+			if err != nil {
+				return submitted, err
+			}
+			g.pending = append(g.pending[:idx], g.pending[idx+1:]...)
+			g.running = append(g.running, pending)
+			submitted++
+		}
+	}
+	return submitted, nil
+}
+
+func (g *graph) checkCompleted(r Runner, report jobReport) (int, error) {
+	nCompleted := 0
+	runningList := make([]*job, len(g.running))
+	copy(runningList, g.running)
+	for _, running := range g.running {
+		completed, err := r.Completed(running)
+		if err != nil {
+			return nCompleted, fmt.Errorf("unable to determine job state: %s: %s", running.ID, err)
+		}
+		if completed {
+			nCompleted++
+			running.hasCompleted = true
+			successful, err := r.CompletedSuccessfully(running)
+			if err != nil {
+				return nCompleted, fmt.Errorf("unable to determine job state: %s: %s", running.ID, err)
+			}
+			idx, err := jobIndex(running, g.running)
+			if err != nil {
+				return nCompleted, err
+			}
+			if successful {
+				// done files are only created on successful completion of a job.
+				green := color.New(color.Bold, color.FgGreen).SprintfFunc()
+				log.Printf("Job completed %s %s %s", green("SUCCESSFULLY"), running.UUID, running.ID)
+				_, err := os.Create(running.doneFile)
+				if err != nil {
+					return nCompleted, fmt.Errorf("unable to create done file for job: %s: %s", running.ID, err)
+				}
+				resources, err := r.ResourcesUsed(running)
+				if err != nil {
+					log.Printf("Failed to get resources for job: %v: %v", running.UUID, err)
+				} else {
+					err = report.Add(running, resources)
+					if err != nil {
+						log.Printf("Unable to update job report file: %v", err)
+					}
+				}
+				g.completed = append(g.completed, running)
+				g.running = append(g.running[:idx], g.running[idx+1:]...)
+			} else {
+				bold := color.New(color.Bold, color.FgRed).SprintfFunc()
+				log.Printf("%s: job failed: %v, %v: stdout written to %s", bold("ERROR"), running.UUID, running.ID, running.Stdout)
+				g.failed = append(g.failed, running)
+				g.running = append(g.running[:idx], g.running[idx+1:]...)
+			}
+		}
+	}
+	return nCompleted, nil
 }
 
 type executionContext struct {
