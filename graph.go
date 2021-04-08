@@ -287,9 +287,16 @@ func newExecutionContext(j *job) (executionContext, error) {
 	if err != nil {
 		return executionContext{}, fmt.Errorf("failed to create temp directory: %v", err)
 	}
-	jobFn := filepath.Join(cxt.dir, "job.sh")
+	jobFn, err := filepath.Abs(filepath.Join(cxt.dir, "job.sh"))
+	if err != nil {
+		return executionContext{}, fmt.Errorf("unable to get absolute path of job.sh: %v", err)
+	}
 	cxt.script = jobFn
-	scriptFn := filepath.Join(cxt.dir, "script.sh")
+	scriptFn, err := filepath.Abs(filepath.Join(cxt.dir, "script.sh"))
+	if err != nil {
+		return executionContext{}, fmt.Errorf("unable to get absolute path of script.sh: %v", err)
+	}
+
 	if err := createJobFile(jobFn, scriptFn, j); err != nil {
 		return executionContext{}, fmt.Errorf("unable to create job file: %v", err)
 	}
