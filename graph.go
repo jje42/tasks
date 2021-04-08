@@ -313,7 +313,7 @@ func createJobFile(jobFile, scriptFile string, j *job) error {
 		return fmt.Errorf("failed to get resources for job: %v: %v", j.UUID, err)
 	}
 	shell := "/bin/bash"
-	content := fmt.Sprintf(`singularity exec %s %s %s %s`, r.SingulartyExtraArgs, r.Container, shell, scriptFile)
+	content := fmt.Sprintf(`singularity exec %s %s %s %s`, r.SingularityExtraArgs, r.Container, shell, scriptFile)
 	if err := ioutil.WriteFile(jobFile, []byte(content), 0664); err != nil {
 		return fmt.Errorf("failed to write job script content: %v", err)
 	}
@@ -413,7 +413,7 @@ func displayJob(j *job) error {
 		bold("Stdout"), j.Stdout,
 		bold("DoneFile"), j.doneFile,
 		bold("Container"), r.Container,
-		bold("Extra Args"), r.SingulartyExtraArgs,
+		bold("Extra Args"), r.SingularityExtraArgs,
 		bold("Script"), indentedCmd)
 	return nil
 }
