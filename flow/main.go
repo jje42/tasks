@@ -12,19 +12,23 @@ import (
 )
 
 var (
+	version          = "undefined"
+	buildDate        = "undefined"
 	startFromScratch bool
 	jobRunner        string
 	configFile       string
 	rootCmd          = &cobra.Command{
-		Use:   "flow [flags] <workflow.go>",
-		Short: "",
-		Long:  "",
-		Args:  cobra.ExactArgs(1),
-		Run:   myMain,
+		Use:     "flow [flags] <workflow.go>",
+		Short:   fmt.Sprintf("flow (%s built on %s)", version, buildDate),
+		Long:    "",
+		Version: version,
+		Args:    cobra.ExactArgs(1),
+		Run:     myMain,
 	}
 )
 
 func main() {
+	rootCmd.SetVersionTemplate(version + "\n")
 	rootCmd.Flags().BoolVarP(&startFromScratch, "start-from-scratch", "s", false, "Start from scratch")
 	rootCmd.Flags().StringVarP(&jobRunner, "job-runner", "j", "", "Job runner")
 	rootCmd.Flags().StringVarP(&configFile, "config", "c", "", "Config file")

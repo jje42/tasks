@@ -165,6 +165,7 @@ func (g graph) Process() error {
 	// recieved.
 	go func() {
 		<-sigs
+		log.Printf("Shutting down jobs")
 		for _, job := range g.running {
 			err := runner.Kill(job)
 			if err != nil {
