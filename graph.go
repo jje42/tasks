@@ -35,7 +35,7 @@ func (j job) Command() string {
 	return fmt.Sprintf(`set -o errexit
 set -o pipefail
 set -o verbose
-env
+env | sort
 %s`, j.Cmd.Command())
 }
 
@@ -146,6 +146,10 @@ func (g graph) Process() error {
 	default:
 		log.Fatalf("Unknown runner requested: %s", runnerStr)
 	}
+	// Ensure that however we leave this function any running jobs are
+	// terminated.
+	defer killRunningJobs(g, runner)
+
 	// "yyyy-MM-DD_HHmmss"
 	t := time.Now()
 	timestamp := fmt.Sprintf(
@@ -171,11 +175,9 @@ func (g graph) Process() error {
 	go func() {
 		<-sigs
 		log.Printf("Shutting down jobs")
-		for _, job := range g.running {
-			err := runner.Kill(job)
-			if err != nil {
-				log.Println(err)
-			}
+		err := killRunningJobs(g, runner)
+		if err != nil {
+			log.Println(err)
 		}
 		os.Exit(1)
 	}()
@@ -221,6 +223,23 @@ func (g graph) Process() error {
 	}
 	log.Printf("Completed with %d completed and %d failed (running = %d)", len(g.completed), len(g.failed), len(g.running))
 	return nil
+}
+
+// Attempt to kill all running jobs. Returns an error if it fails to kill any of
+// the jobs.
+func killRunningJobs(g graph, r Runner) error {
+	errs := []error{}
+	for _, job := range g.running {
+		err := r.Kill(job)
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) == 0 {
+		return nil
+	} else {
+		return fmt.Errorf("failed to kill %d jobs", len(errs))
+	}
 }
 
 func (g *graph) submitPending(r Runner) (int, error) {
@@ -345,6 +364,8 @@ func createJobFile(jobFile, scriptFile string, j *job) error {
 	}
 	// slurm _requires_ a shebang line
 	content := fmt.Sprintf(`#!/usr/bin/env bash
+set -o verbose
+env | sort
 %s exec %s %s %s %s`, singularityBin, r.SingularityExtraArgs, r.Container, shell, scriptFile)
 	if err := ioutil.WriteFile(jobFile, []byte(content), 0664); err != nil {
 		return fmt.Errorf("failed to write job script content: %v", err)
