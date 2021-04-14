@@ -134,6 +134,11 @@ func (g graph) Process() error {
 		if err != nil {
 			return err
 		}
+	case "slurm":
+		runner, err = NewSlurmRunner()
+		if err != nil {
+			return err
+		}
 	case "local":
 		runner = NewLocalRunner()
 	case "dummy":
@@ -338,7 +343,9 @@ func createJobFile(jobFile, scriptFile string, j *job) error {
 	if singularityBin == "" {
 		singularityBin = "singularity"
 	}
-	content := fmt.Sprintf(`%s exec %s %s %s %s`, singularityBin, r.SingularityExtraArgs, r.Container, shell, scriptFile)
+	// slurm _requires_ a shebang line
+	content := fmt.Sprintf(`#!/usr/bin/env bash
+%s exec %s %s %s %s`, singularityBin, r.SingularityExtraArgs, r.Container, shell, scriptFile)
 	if err := ioutil.WriteFile(jobFile, []byte(content), 0664); err != nil {
 		return fmt.Errorf("failed to write job script content: %v", err)
 	}
