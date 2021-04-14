@@ -56,7 +56,8 @@ func jobState(j *job) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("unable to determine job state: %s: %s", err, string(out))
 	}
-	return string(out), nil
+	state := strings.TrimSuffix(string(out), "\n")
+	return state, nil
 }
 
 func (r *SlurmRunner) ResourcesUsed(j *job) (resourcesUsed, error) {
