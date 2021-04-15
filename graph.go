@@ -18,15 +18,16 @@ import (
 )
 
 type job struct {
-	Cmd          Commander
-	UUID         uuid.UUID
-	ID           string
-	Inputs       []string
-	Outputs      []string
-	Stdout       string
-	doneFile     string
-	Dependencies []*job
-	hasCompleted bool
+	Cmd                   Commander
+	UUID                  uuid.UUID
+	ID                    string
+	Inputs                []string
+	Outputs               []string
+	Stdout                string
+	doneFile              string
+	Dependencies          []*job
+	hasCompleted          bool
+	completedSuccessfully bool
 }
 
 // Command takes the original command line and allows adding pre- or post-
@@ -45,6 +46,10 @@ func (j job) isRunnable() bool {
 	}
 	for _, d := range j.Dependencies {
 		if !d.hasCompleted {
+			return false
+		}
+		// If any dependency failed, this job is not runnable.
+		if !d.completedSuccessfully {
 			return false
 		}
 	}
@@ -80,8 +85,7 @@ func newGraph(cmds []Commander) (graph, error) {
 		g.pending = append(g.pending, j)
 	}
 
-	startFromScratch := true
-	if startFromScratch {
+	if v.GetBool("start_from_scratch") {
 		for _, j := range g.jobs {
 			err := os.Remove(j.doneFile)
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -100,6 +104,7 @@ func newGraph(cmds []Commander) (graph, error) {
 		}
 		if ok {
 			p.hasCompleted = true
+			p.completedSuccessfully = true
 			idx, err := jobIndex(p, g.pending)
 			if err != nil {
 				return g, fmt.Errorf("unable to find job index: %s: %v", p.UUID, err)
@@ -289,6 +294,7 @@ func (g *graph) checkCompleted(r Runner, report jobReport) (int, error) {
 				return nCompleted, err
 			}
 			if successful {
+				running.completedSuccessfully = true
 				// done files are only created on successful completion of a job.
 				green := color.New(color.Bold, color.FgGreen).SprintfFunc()
 				log.Printf("Job completed %s %s %s", green("SUCCESSFULLY"), running.UUID, running.ID)
