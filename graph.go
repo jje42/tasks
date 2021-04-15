@@ -272,7 +272,7 @@ func (g *graph) checkCompleted(r Runner, report jobReport) (int, error) {
 	nCompleted := 0
 	runningList := make([]*job, len(g.running))
 	copy(runningList, g.running)
-	for _, running := range g.running {
+	for _, running := range runningList {
 		completed, err := r.Completed(running)
 		if err != nil {
 			return nCompleted, fmt.Errorf("unable to determine job state: %s: %s", running.ID, err)
