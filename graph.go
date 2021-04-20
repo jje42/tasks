@@ -369,14 +369,35 @@ func createJobFile(jobFile, scriptFile string, j *job) error {
 		singularityBin = "singularity"
 	}
 	// slurm _requires_ a shebang line
-	content := fmt.Sprintf(`#!/usr/bin/env bash
+	var content strings.Builder
+	content.WriteString(`#!/usr/bin/env bash
 set -o verbose
 env | sort
-%s exec %s %s %s %s`, singularityBin, r.SingularityExtraArgs, r.Container, shell, scriptFile)
-	if err := ioutil.WriteFile(jobFile, []byte(content), 0664); err != nil {
+`)
+	ds := []string{}
+	for _, fn := range j.Outputs {
+		ds = append(ds, filepath.Dir(fn))
+	}
+	for _, d := range unique(ds) {
+		content.WriteString(fmt.Sprintf("mkdir -p %s", d))
+	}
+	content.WriteString(fmt.Sprintf("%s exec %s %s %s %s", singularityBin, r.SingularityExtraArgs, r.Container, shell, scriptFile))
+	if err := ioutil.WriteFile(jobFile, []byte(content.String()), 0664); err != nil {
 		return fmt.Errorf("failed to write job script content: %v", err)
 	}
 	return nil
+}
+
+func unique(xs []string) []string {
+	m := make(map[string]bool)
+	for _, x := range xs {
+		m[x] = true
+	}
+	ys := []string{}
+	for key := range m {
+		ys = append(ys, key)
+	}
+	return ys
 }
 
 func createScriptFile(scriptFile string, j *job) error {
