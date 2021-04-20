@@ -25,6 +25,7 @@ func (r *SlurmRunner) Run(ctx executionContext) error {
 		"--job-name", jobName,
 		"-o", ctx.job.Stdout,
 		"--parsable",
+		"--export=NONE",
 		fmt.Sprintf("--cpus-per-task=%d", resources.CPUs),
 		fmt.Sprintf("--mem=%dG", resources.Memory),
 		fmt.Sprintf("--time=%02d:00:00", resources.Time),
