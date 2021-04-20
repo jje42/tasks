@@ -379,7 +379,7 @@ env | sort
 		ds = append(ds, filepath.Dir(fn))
 	}
 	for _, d := range unique(ds) {
-		content.WriteString(fmt.Sprintf("mkdir -p %s", d))
+		content.WriteString(fmt.Sprintf("mkdir -p %s\n", d))
 	}
 	content.WriteString(fmt.Sprintf("%s exec %s %s %s %s", singularityBin, r.SingularityExtraArgs, r.Container, shell, scriptFile))
 	if err := ioutil.WriteFile(jobFile, []byte(content.String()), 0664); err != nil {
