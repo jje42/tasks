@@ -131,6 +131,7 @@ func InitConfig(fn string, overrides map[string]interface{}) error {
 		"flowdir":            ".flow",
 		"start_from_scratch": false,
 		"job_runner":         "local",
+		"singularity_bin":    "singularity",
 	}
 	v = viper.New()
 	for key, value := range defaults {
