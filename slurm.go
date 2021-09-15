@@ -3,6 +3,7 @@ package flow
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os/exec"
 	"strings"
 )
@@ -31,12 +32,14 @@ func (r *SlurmRunner) Run(ctx executionContext) error {
 		fmt.Sprintf("--time=%02d:00:00", resources.Time),
 		ctx.script,
 	)
+	log.Printf("sbatch command: %s", strings.Join(cmd.Args, " "))
 	cmd.Dir = ctx.dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("unable to start job: %v: %v: %v", ctx.job.UUID, err, string(out))
 	}
 	ctx.job.ID = strings.TrimSuffix(string(out), "\n")
+	log.Printf("Job ID: %s", ctx.job.ID)
 	return nil
 }
 
