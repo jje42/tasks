@@ -227,6 +227,9 @@ func (g graph) Process() error {
 		log.Printf("Workflow completed %s", greenBold("SUCCESSFULLY"))
 	}
 	log.Printf("Completed with %d completed and %d failed (running = %d)", len(g.completed), len(g.failed), len(g.running))
+	if len(g.failed) > 0 {
+		return errors.New("flow workflow completed with failures")
+	}
 	return nil
 }
 
@@ -381,7 +384,23 @@ env | sort
 	for _, d := range unique(ds) {
 		content.WriteString(fmt.Sprintf("mkdir -p %s\n", d))
 	}
-	content.WriteString(fmt.Sprintf("%s exec %s %s %s %s", singularityBin, r.SingularityExtraArgs, r.Container, shell, scriptFile))
+
+	// Typically flowdir is inside a users home directory and this is
+	// automatically bound in, but it may not be and the -C option may be
+	// provided.
+	if r.Container != "" {
+		content.WriteString(fmt.Sprintf(
+			"%s exec %s -B %s:/flowdir %s %s /flowdir/%s",
+			singularityBin,
+			r.SingularityExtraArgs,
+			filepath.Dir(scriptFile),
+			r.Container,
+			shell,
+			filepath.Base(scriptFile)))
+	} else {
+		content.WriteString(fmt.Sprintf("%s %s", shell, scriptFile))
+	}
+
 	if err := ioutil.WriteFile(jobFile, []byte(content.String()), 0664); err != nil {
 		return fmt.Errorf("failed to write job script content: %v", err)
 	}
