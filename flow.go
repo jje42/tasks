@@ -12,6 +12,7 @@ import (
 	"plugin"
 	"reflect"
 	"strings"
+	"text/template"
 
 	"github.com/spf13/viper"
 )
@@ -288,4 +289,16 @@ func ReadFOFN(fn string) ([]string, error) {
 	}
 	return xs, nil
 
+}
+
+// RenderTemplate renders the text/template tpl using the data from object.
+// This must succeed and return a string, panics on error.
+func RenderTemplate(tpl string, object interface{}) string {
+	t := template.Must(template.New("script").Parse(tpl))
+	var b strings.Builder
+	err := t.Execute(&b, object)
+	if err != nil {
+		panic(err)
+	}
+	return b.String()
 }
