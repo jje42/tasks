@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -129,6 +130,7 @@ func ResourcesFor(analysisName string) (Resources, error) {
 func InitConfig(fn string, overrides map[string]interface{}) error {
 	defaults := map[string]interface{}{
 		"flowdir":            ".flow",
+		"tmpdir":             ".flow/tmp",
 		"start_from_scratch": false,
 		"job_runner":         "local",
 		"singularity_bin":    "singularity",
@@ -170,6 +172,10 @@ func InitConfig(fn string, overrides map[string]interface{}) error {
 	err := os.MkdirAll(v.GetString("flowdir"), 0755)
 	if err != nil {
 		return fmt.Errorf("failed to create flowdir: %s: %v", v.GetString("flowdir"), err)
+	}
+	err = os.MkdirAll(v.GetString("tmpdir"), 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create tmpdir: %s: %s", v.GetString("tmpdir"), err)
 	}
 	return nil
 }
@@ -261,4 +267,25 @@ func copyFile(src, dst string) error {
 
 func SafeWriteConfigAs(fn string) error {
 	return v.SafeWriteConfigAs(fn)
+}
+
+// ReadFOFN reads a file of filenames and returns them as a string slice. It
+// does not check that the file exist or the user has permission to read them.
+func ReadFOFN(fn string) ([]string, error) {
+	r, err := os.Open(fn)
+	if err != nil {
+		return []string{}, err
+	}
+	defer r.Close()
+	scanner := bufio.NewScanner(r)
+	xs := []string{}
+	for scanner.Scan() {
+		line := scanner.Text()
+		xs = append(xs, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return []string{}, err
+	}
+	return xs, nil
+
 }

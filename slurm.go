@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -21,12 +22,16 @@ func (r *SlurmRunner) Run(ctx executionContext) error {
 	if err != nil {
 		return fmt.Errorf("failed to get resources for job: %s: %v", ctx.job.UUID, err)
 	}
+	tmpdir, err := filepath.Abs(v.GetString("tmpdir"))
+	if err != nil {
+		return fmt.Errorf("failed to get abs path of tmpdir: %s", err)
+	}
 	cmd := exec.Command(
 		"sbatch",
 		"--job-name", jobName,
 		"-o", ctx.job.Stdout,
 		"--parsable",
-		"--export=NONE",
+		fmt.Sprintf("--export=TMPDIR=%s", tmpdir),
 		fmt.Sprintf("--cpus-per-task=%d", resources.CPUs),
 		fmt.Sprintf("--mem=%dG", resources.Memory),
 		fmt.Sprintf("--time=%02d:00:00", resources.Time),
