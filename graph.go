@@ -191,7 +191,7 @@ func (g graph) Process() error {
 	if err != nil {
 		return fmt.Errorf("failed to submit jobs: %v", err)
 	}
-	log.Printf("%d pending, %d running, %d done", len(g.pending), len(g.running), len(g.completed)+len(g.failed))
+	log.Printf("%d pending, %d running, %d failed, %d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
 
 	for {
 		nCompleted, err := g.checkCompleted(runner, report)
@@ -203,7 +203,7 @@ func (g graph) Process() error {
 			return fmt.Errorf("failed to submit jobs: %v", err)
 		}
 		if nCompleted > 0 || nSubmitted > 0 {
-			log.Printf("%d pending, %d running, %d done", len(g.pending), len(g.running), len(g.completed)+len(g.failed))
+			log.Printf("%d pending, %d running, %d failed, %d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
 		}
 		if len(g.pending) == 0 && len(g.running) == 0 {
 			log.Printf("There are no more jobs to run")
@@ -496,7 +496,7 @@ func displayJob(j *job) error {
 %s: %s
 %s: %s
 %s: %s
-%s: -l select=1:ncpus=%d:mem=%d -l walltime=%d:00:00
+%s: CPUs %d; Memory %d; Time %d:00:00
 %s: %s
 %s: %s
 %s: %s
