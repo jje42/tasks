@@ -37,7 +37,7 @@ func (r *SlurmRunner) Run(ctx executionContext) error {
 		fmt.Sprintf("--time=%02d:00:00", resources.Time),
 		ctx.script,
 	)
-	log.Printf("sbatch command: %s", strings.Join(cmd.Args, " "))
+	ctx.job.BatchCommand = strings.Join(cmd.Args, " ")
 	cmd.Dir = ctx.dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {

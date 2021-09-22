@@ -28,6 +28,7 @@ type job struct {
 	Dependencies          []*job
 	hasCompleted          bool
 	completedSuccessfully bool
+	BatchCommand          string
 }
 
 // Command takes the original command line and allows adding pre- or post-
@@ -256,7 +257,6 @@ func (g *graph) submitPending(r Runner) (int, error) {
 	copy(pendingList, g.pending)
 	for _, pending := range pendingList {
 		if pending.isRunnable() {
-			displayJob(pending)
 			ctx, err := newExecutionContext(pending)
 			if err != nil {
 				return submitted, fmt.Errorf("failed to create execution context for %s: %v", pending.UUID, err)
@@ -264,6 +264,9 @@ func (g *graph) submitPending(r Runner) (int, error) {
 			if err := r.Run(ctx); err != nil {
 				return submitted, fmt.Errorf("unable to run job: %v", err)
 			}
+			// Display job information after it has been submitted
+			// so JobID is populated.
+			displayJob(pending)
 			idx, err := jobIndex(pending, g.pending)
 			if err != nil {
 				return submitted, err
@@ -503,7 +506,8 @@ func displayJob(j *job) error {
 %s: %s
 %s:
 %s
-
+%s:
+%s
 `,
 		bold("UUID"), j.UUID,
 		bold("Job ID"), j.ID,
@@ -513,7 +517,8 @@ func displayJob(j *job) error {
 		bold("DoneFile"), j.doneFile,
 		bold("Container"), r.Container,
 		bold("Extra Args"), r.SingularityExtraArgs,
-		bold("Script"), indentedCmd)
+		bold("Script"), indentedCmd,
+		bold("Batch Command"), j.BatchCommand)
 	return nil
 }
 

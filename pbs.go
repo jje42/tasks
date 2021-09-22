@@ -46,6 +46,7 @@ func (r *PBSRunner) Run(ctx executionContext) error {
 		"/bin/bash",
 		ctx.script,
 	)
+	ctx.job.BatchCommand = strings.Join(cmd.Args, " ")
 	cmd.Dir = ctx.dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
