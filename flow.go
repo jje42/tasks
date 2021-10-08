@@ -37,7 +37,7 @@ type Resources struct {
 // Command provides some default implementations for
 // Commanders. It can be embedded in a struct to partially
 // implement the Commander interface.
-type Command struct {
+type Task struct {
 	Name                 string
 	CPUs                 int
 	Memory               int
@@ -46,7 +46,7 @@ type Command struct {
 	SingularityExtraArgs string
 }
 
-func (t Command) AnalysisName() string {
+func (t Task) AnalysisName() string {
 	name := t.Name
 	if name == "" {
 		id, err := uuid.NewUUID()
@@ -58,7 +58,7 @@ func (t Command) AnalysisName() string {
 	return name
 }
 
-func (t Command) Resources() Resources {
+func (t Task) Resources() Resources {
 	cpus := t.CPUs
 	if cpus == 0 {
 		cpus = 8
