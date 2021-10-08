@@ -14,6 +14,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/google/uuid"
 	"github.com/spf13/viper"
 )
 
@@ -22,7 +23,7 @@ var v *viper.Viper
 type Commander interface {
 	AnalysisName() string
 	Command() string
-	Resources() (Resources, error)
+	Resources() Resources
 }
 
 type Resources struct {
@@ -31,6 +32,52 @@ type Resources struct {
 	Time                 int
 	Container            string
 	SingularityExtraArgs string
+}
+
+// Command provides some default implementations for
+// Commanders. It can be embedded in a struct to partially
+// implement the Commander interface.
+type Command struct {
+	Name                 string
+	CPUs                 int
+	Memory               int
+	Time                 int
+	Container            string
+	SingularityExtraArgs string
+}
+
+func (t Command) AnalysisName() string {
+	name := t.Name
+	if name == "" {
+		id, err := uuid.NewUUID()
+		if err != nil {
+			panic(err)
+		}
+		name = "command-" + id.String()
+	}
+	return name
+}
+
+func (t Command) Resources() Resources {
+	cpus := t.CPUs
+	if cpus == 0 {
+		cpus = 8
+	}
+	mem := t.Memory
+	if mem == 0 {
+		mem = 16
+	}
+	time := t.Time
+	if time == 0 {
+		time = 24
+	}
+	return Resources{
+		CPUs:                 cpus,
+		Memory:               mem,
+		Time:                 time,
+		Container:            t.Container,
+		SingularityExtraArgs: t.SingularityExtraArgs,
+	}
 }
 
 type Queue struct {
@@ -52,10 +99,7 @@ func (q *Queue) Run() error {
 	}
 	for _, task := range q.tasks {
 		freezeTask(task)
-		r, err := task.Resources()
-		if err != nil {
-			return fmt.Errorf("failed to get resources for job: %s", task.AnalysisName())
-		}
+		r := task.Resources()
 		if r.Container == "" {
 			return fmt.Errorf("no container specified for task: %v", task.AnalysisName())
 		}
@@ -101,7 +145,7 @@ func freezeTask(c Commander) {
 	}
 }
 
-func ResourcesFor(analysisName string) (Resources, error) {
+func resourcesFor(analysisName string) (Resources, error) {
 	// Should we provide default resource allocations or just fail?
 	// cpus=1;mem=1;time=1 is rarely going to be useful.
 	cpus := v.GetInt(fmt.Sprintf("resources.%s.cpus", analysisName))

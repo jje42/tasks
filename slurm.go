@@ -18,10 +18,7 @@ func NewSlurmRunner() (*SlurmRunner, error) {
 
 func (r *SlurmRunner) Run(ctx executionContext) error {
 	jobName := ctx.job.Cmd.AnalysisName()
-	resources, err := ctx.job.Cmd.Resources()
-	if err != nil {
-		return fmt.Errorf("failed to get resources for job: %s: %v", ctx.job.UUID, err)
-	}
+	resources := ctx.job.Cmd.Resources()
 	tmpdir, err := filepath.Abs(v.GetString("tmpdir"))
 	if err != nil {
 		return fmt.Errorf("failed to get abs path of tmpdir: %s", err)

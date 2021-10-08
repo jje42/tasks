@@ -365,10 +365,7 @@ func newExecutionContext(j *job) (executionContext, error) {
 }
 
 func createJobFile(jobFile, scriptFile string, j *job) error {
-	r, err := j.Cmd.Resources()
-	if err != nil {
-		return fmt.Errorf("failed to get resources for job: %v: %v", j.UUID, err)
-	}
+	r := j.Cmd.Resources()
 	shell := "/bin/bash"
 	singularityBin := v.GetString("singularity_bin")
 	if singularityBin == "" {
@@ -485,10 +482,7 @@ type resourcesUsed struct {
 }
 
 func displayJob(j *job) error {
-	r, err := j.Cmd.Resources()
-	if err != nil {
-		return fmt.Errorf("cannot obtain resources: %v", err)
-	}
+	r := j.Cmd.Resources()
 	c := []string{}
 	for _, line := range strings.Split(j.Command(), "\n") {
 		c = append(c, fmt.Sprintf("  %s", line))
