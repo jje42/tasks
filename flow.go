@@ -173,11 +173,18 @@ func resourcesFor(analysisName string) (Resources, error) {
 }
 
 func InitConfig(fn string, overrides map[string]interface{}) error {
+	jobRunner := "local"
+	if _, err := exec.LookPath("qsub"); err == nil {
+		jobRunner = "pbs"
+	}
+	if _, err := exec.LookPath("sbatch"); err == nil {
+		jobRunner = "slurm"
+	}
 	defaults := map[string]interface{}{
 		"flowdir":            ".flow",
 		"tmpdir":             ".flow/tmp",
 		"start_from_scratch": false,
-		"job_runner":         "local",
+		"job_runner":         jobRunner,
 		"singularity_bin":    "singularity",
 	}
 	v = viper.New()
