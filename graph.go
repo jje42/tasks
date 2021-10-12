@@ -82,6 +82,11 @@ func newGraph(cmds []Commander) (graph, error) {
 		job.Stdout = fmt.Sprintf("%s.out", job.Outputs[0])
 		dir, file := filepath.Split(job.Outputs[0])
 		job.doneFile = filepath.Join(dir, fmt.Sprintf(".%s.done", file))
+		job.doneFile = filepath.Join(
+			v.GetString("flowdir"),
+			"done",
+			strings.TrimSuffix(job.Stdout, ".out")+".done",
+		)
 		g.jobs = append(g.jobs, job)
 	}
 	for _, j := range g.jobs {
@@ -307,7 +312,11 @@ func (g *graph) checkCompleted(r Runner, report jobReport) (int, error) {
 				// done files are only created on successful completion of a job.
 				green := color.New(color.Bold, color.FgGreen).SprintfFunc()
 				log.Printf("Job completed %s %s %s", green("SUCCESSFULLY"), running.UUID, running.ID)
-				_, err := os.Create(running.doneFile)
+				err := os.MkdirAll(filepath.Dir(running.doneFile), 0755)
+				if err != nil {
+					return nCompleted, fmt.Errorf("unable to create done file directory for job: %s: %s", running.ID, err)
+				}
+				_, err = os.Create(running.doneFile)
 				if err != nil {
 					return nCompleted, fmt.Errorf("unable to create done file for job: %s: %s", running.ID, err)
 				}
