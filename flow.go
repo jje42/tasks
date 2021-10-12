@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-var v *viper.Viper
+var v *viper.Viper = viper.New()
 
 type Commander interface {
 	AnalysisName() string
@@ -99,10 +99,10 @@ func (q *Queue) Run() error {
 	}
 	for _, task := range q.tasks {
 		freezeTask(task)
-		r := task.Resources()
-		if r.Container == "" {
-			return fmt.Errorf("no container specified for task: %v", task.AnalysisName())
-		}
+		//r := task.Resources()
+		//if r.Container == "" {
+		//        return fmt.Errorf("no container specified for task: %v", task.AnalysisName())
+		//}
 	}
 	g, err := newGraph(q.tasks)
 	if err != nil {

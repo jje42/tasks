@@ -76,6 +76,9 @@ func newGraph(cmds []Commander) (graph, error) {
 		}
 		// What if the job has no outputs? Is this an error, if so we should
 		// check for this.
+		if len(job.Outputs) == 0 {
+			log.Fatal("Job has no defined outputs: " + job.Cmd.AnalysisName())
+		}
 		job.Stdout = fmt.Sprintf("%s.out", job.Outputs[0])
 		dir, file := filepath.Split(job.Outputs[0])
 		job.doneFile = filepath.Join(dir, fmt.Sprintf(".%s.done", file))
