@@ -191,7 +191,7 @@ func (g graph) Process() error {
 		log.Printf("Shutting down jobs")
 		err := killRunningJobs(g, runner)
 		if err != nil {
-			log.Println(err)
+			log.Printf("Signal handler unable to kill all jobs: %s", err)
 		}
 		os.Exit(1)
 	}()
