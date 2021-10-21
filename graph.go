@@ -211,6 +211,13 @@ func (g graph) Process() error {
 		if err != nil {
 			return fmt.Errorf("failed to submit jobs: %v", err)
 		}
+		if nSubmitted == 0 && len(g.pending) != 0 && len(g.running) == 0 {
+			// If no jobs were submitted but there are pending jobs
+			// and no running jobs it must mean jobs cannot run
+			// because of previous failures.
+			log.Printf("There are no more jobs that can be run.")
+			break
+		}
 		if nCompleted > 0 || nSubmitted > 0 {
 			log.Printf("%d pending, %d running, %d failed, %d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
 		}
@@ -218,7 +225,7 @@ func (g graph) Process() error {
 			log.Printf("There are no more jobs to run")
 			break
 		}
-		time.Sleep(10 * time.Second)
+		time.Sleep(60 * time.Second)
 	}
 
 	err = report.Flush()
