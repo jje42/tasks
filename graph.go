@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -183,11 +184,16 @@ func (g graph) Process() error {
 	}
 
 	sigs := make(chan os.Signal, 1)
+	quit := make(chan bool)
+	allStopped := make(chan bool)
+
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	// Set a goroutine to gracefully shutdown running jobs if SIGINT or SIGTERM
 	// recieved.
 	go func() {
 		<-sigs
+		quit <- true
+		<-allStopped
 		log.Printf("Shutting down jobs")
 		err := killRunningJobs(g, runner)
 		if err != nil {
@@ -196,36 +202,59 @@ func (g graph) Process() error {
 		os.Exit(1)
 	}()
 
-	_, err = g.submitPending(runner)
-	if err != nil {
-		return fmt.Errorf("failed to submit jobs: %v", err)
-	}
-	log.Printf("%d pending, %d running, %d failed, %d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
+	var wg sync.WaitGroup
+	wg.Add(1)
+	errs := make(chan error, 1)
 
-	for {
-		nCompleted, err := g.checkCompleted(runner, report)
+	go func() {
+		defer wg.Done()
+		_, err = g.submitPending(runner)
 		if err != nil {
-			return fmt.Errorf("failed to check running jobs: %v", err)
+			errs <- fmt.Errorf("failed to submit jobs: %v", err)
+			return
 		}
-		nSubmitted, err := g.submitPending(runner)
-		if err != nil {
-			return fmt.Errorf("failed to submit jobs: %v", err)
+		log.Printf("%d pending, %d running, %d failed, %d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
+
+		for {
+			select {
+			case <-quit:
+				allStopped <- true
+				time.Sleep(1 * time.Hour)
+			default:
+				nCompleted, err := g.checkCompleted(runner, report)
+				if err != nil {
+					errs <- fmt.Errorf("failed to check running jobs: %v", err)
+					return
+				}
+				nSubmitted, err := g.submitPending(runner)
+				if err != nil {
+					errs <- fmt.Errorf("failed to submit jobs: %v", err)
+					return
+				}
+				if nSubmitted == 0 && len(g.pending) != 0 && len(g.running) == 0 {
+					// If no jobs were submitted but there are pending jobs
+					// and no running jobs it must mean jobs cannot run
+					// because of previous failures.
+					log.Printf("There are no more jobs that can be run.")
+					break
+				}
+				if nCompleted > 0 || nSubmitted > 0 {
+					log.Printf("%d pending, %d running, %d failed, %d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
+				}
+				if len(g.pending) == 0 && len(g.running) == 0 {
+					log.Printf("There are no more jobs to run")
+					break
+				}
+				time.Sleep(60 * time.Second)
+			}
 		}
-		if nSubmitted == 0 && len(g.pending) != 0 && len(g.running) == 0 {
-			// If no jobs were submitted but there are pending jobs
-			// and no running jobs it must mean jobs cannot run
-			// because of previous failures.
-			log.Printf("There are no more jobs that can be run.")
-			break
-		}
-		if nCompleted > 0 || nSubmitted > 0 {
-			log.Printf("%d pending, %d running, %d failed, %d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
-		}
-		if len(g.pending) == 0 && len(g.running) == 0 {
-			log.Printf("There are no more jobs to run")
-			break
-		}
-		time.Sleep(60 * time.Second)
+	}()
+
+	wg.Wait()
+	signal.Reset()
+	err := <-errs
+	if err != nil {
+		return err
 	}
 
 	err = report.Flush()
