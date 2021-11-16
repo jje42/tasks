@@ -236,14 +236,14 @@ func (g graph) Process() error {
 					// and no running jobs it must mean jobs cannot run
 					// because of previous failures.
 					log.Printf("There are no more jobs that can be run.")
-					break
+					return
 				}
 				if nCompleted > 0 || nSubmitted > 0 {
 					log.Printf("%d pending, %d running, %d failed, %d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
 				}
 				if len(g.pending) == 0 && len(g.running) == 0 {
 					log.Printf("There are no more jobs to run")
-					break
+					return
 				}
 				time.Sleep(60 * time.Second)
 			}
