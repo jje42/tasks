@@ -252,7 +252,7 @@ func (g graph) Process() error {
 
 	wg.Wait()
 	signal.Reset()
-	err := <-errs
+	err = <-errs
 	if err != nil {
 		return err
 	}
