@@ -193,7 +193,7 @@ func (g graph) Process() error {
 	go func() {
 		<-sigs
 		quit <- true
-		<-allStopped
+		<-allStopped // is this actually necessary? Will the send to quit block until received?
 		log.Printf("Shutting down jobs")
 		err := killRunningJobs(g, runner)
 		if err != nil {
@@ -208,6 +208,7 @@ func (g graph) Process() error {
 
 	go func() {
 		defer wg.Done()
+		defer close(errs)
 		_, err = g.submitPending(runner)
 		if err != nil {
 			errs <- fmt.Errorf("failed to submit jobs: %v", err)
@@ -252,9 +253,10 @@ func (g graph) Process() error {
 
 	wg.Wait()
 	signal.Reset()
-	err = <-errs
-	if err != nil {
-		return err
+	for err := range errs {
+		if err != nil {
+			return err
+		}
 	}
 
 	err = report.Flush()
