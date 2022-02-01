@@ -84,8 +84,8 @@ type Queue struct {
 	tasks []Commander
 }
 
-func (q *Queue) Add(task Commander) {
-	q.tasks = append(q.tasks, task)
+func (q *Queue) Add(task ...Commander) {
+	q.tasks = append(q.tasks, task...)
 }
 
 func (q *Queue) Run() error {
