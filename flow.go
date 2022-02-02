@@ -34,7 +34,7 @@ type Resources struct {
 	SingularityExtraArgs string
 }
 
-// Command provides some default implementations for
+// Task provides some default implementations for
 // Commanders. It can be embedded in a struct to partially
 // implement the Commander interface.
 type Task struct {
@@ -80,12 +80,24 @@ func (t Task) Resources() Resources {
 	}
 }
 
+func (t *Task) SetResources(res Resources) {
+	t.CPUs = res.CPUs
+	t.Memory = res.Memory
+	t.Time = res.Time
+	t.Container = res.Container
+	t.SingularityExtraArgs = res.SingularityExtraArgs
+}
+
 type Queue struct {
 	tasks []Commander
 }
 
 func (q *Queue) Add(task ...Commander) {
 	q.tasks = append(q.tasks, task...)
+}
+
+func (q *Queue) Tasks() []Commander {
+	return q.tasks
 }
 
 func (q *Queue) Run() error {
@@ -352,4 +364,9 @@ func RenderTemplate(tpl string, object interface{}) string {
 		panic(err)
 	}
 	return b.String()
+}
+
+type Tasks struct {
+	Commands []Commander
+	Outputs  map[string]string
 }
