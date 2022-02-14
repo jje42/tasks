@@ -433,6 +433,7 @@ env | sort
 	}
 	for _, d := range unique(ds) {
 		content.WriteString(fmt.Sprintf("mkdir -p %s\n", d))
+		os.MkdirAll(d, 0755)
 	}
 
 	// Typically flowdir is inside a users home directory and this is
@@ -511,7 +512,17 @@ func cmdOutputs(c Commander) []string {
 
 func hasIntersection(list1, list2 []string) bool {
 	for _, i := range list1 {
+		// Inputs/Outputs that are the empty string should NOT be
+		// considered; otherwise every task that has an empty string
+		// output will become a dependency of any task with an empty
+		// string input.
+		if i == "" {
+			continue
+		}
 		for _, j := range list2 {
+			if j == "" {
+				continue
+			}
 			if i == j {
 				return true
 			}

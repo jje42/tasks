@@ -138,7 +138,10 @@ func freezeTask(c Commander) {
 			if val.CanSet() {
 				switch kind := val.Kind(); kind {
 				case reflect.String:
-					p, _ := filepath.Abs(val.String())
+					var p string
+					if val.String() != "" {
+						p, _ = filepath.Abs(val.String())
+					}
 					val.SetString(p)
 				case reflect.Slice:
 					if val.Type().Elem().Name() != "string" {
@@ -146,7 +149,10 @@ func freezeTask(c Commander) {
 					}
 					for j := 0; j < val.Len(); j++ {
 						sliceValue := val.Index(j)
-						p, _ := filepath.Abs(sliceValue.String())
+						var p string
+						if sliceValue.String() != "" {
+							p, _ = filepath.Abs(sliceValue.String())
+						}
 						sliceValue.SetString(p)
 					}
 				default:
