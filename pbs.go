@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -168,7 +169,17 @@ func qstat(jobId string) (qstatResult, error) {
 	cmd := exec.Command("qstat", "-xf", "-F", "json", jobId)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return qstatResult{}, fmt.Errorf("failed determine job state: failed to run qstat: %v: %s", err, string(out))
+		// This is being returned frequently
+		time.Sleep(10 * time.Second)
+		out, err = cmd.CombinedOutput()
+		if err != nil {
+			time.Sleep(1 * time.Minute)
+			out, err = cmd.CombinedOutput()
+			if err != nil {
+				// OK, now something appears to be wrong...
+				return qstatResult{}, fmt.Errorf("failed determine job state: failed to run qstat: %v: %s", err, string(out))
+			}
+		}
 	}
 	var q qstatResultList
 	err = json.Unmarshal(out, &q)
