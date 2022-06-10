@@ -291,7 +291,8 @@ func (g graph) Process(opts Options) error {
 		boldRed := color.New(color.Bold, color.FgRed).SprintfFunc()
 		log.Printf("Workflow completed with %d %s jobs, see stdout for details", len(g.failed), boldRed("FAILED"))
 		if !opts.Quiet {
-			fmt.Printf("%v Workflow completed with %d %s jobs, see stdout for details\n", len(g.failed), logsymbols.Error, boldRed("FAILED"))
+			fmt.Printf("%v Workflow completed with %d %s jobs, see stdout for details\n",
+				logsymbols.Error, len(g.failed), boldRed("FAILED"))
 		}
 		for _, job := range g.failed {
 			log.Printf("%s: %s, output: %s", boldRed("FAILED"), job.UUID, job.Stdout)
