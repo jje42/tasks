@@ -1,11 +1,11 @@
-`flow` is a workflow management system, designed primarily to run jobs on a
+`tasks` is a workflow management system, designed primarily to run jobs on a
 High Performance Computer (HPC) running PBS Pro or Slurm. Jobs can optionally
 be run inside Singularity containers. This is a very specific set of
 conditions, and there are many other workflow management systems already
-available. `flow` is written in Go, and so are the workflows that it manages.
+available. `tasks` is written in Go, and so are the workflows that it manages.
 It was originally started as an exercise is learning the Go language.
 
-`flow` is heavily influenced by Queue, a workflow engine by the Broad
+`tasks` is heavily influenced by Queue, a workflow engine by the Broad
 Institute's GSA group as part of the GATK software.
 
 You may want to look at:
@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jje42/flow"
+	"github.com/jje42/tasks"
 )
 
 type CreateInput struct {
@@ -40,8 +40,8 @@ func (c CreateInput) Command() string {
 	return fmt.Sprintf("echo %s >%s", c.Word, c.Output)
 }
 
-func (c CreateInput) Resources() flow.Resources {
-	return flow.Resources{CPUs: 1, Memory: 1, Time: 1, Container: "docker://debian:10"}
+func (c CreateInput) Resources() tasks.Resources {
+	return tasks.Resources{CPUs: 1, Memory: 1, Time: 1, Container: "docker://debian:10"}
 }
 
 type ToUpper struct {
@@ -57,8 +57,8 @@ func (c ToUpper) Command() string {
 	return fmt.Sprintf(`cat %s | tr '[:lower:]' '[:upper:]' >%s`, c.Input, c.Output)
 }
 
-func (c ToUpper) Resources() flow.Resources {
-	return flow.Resources{CPUs: 1, Memory: 1, Time: 1, Container: "docker://debian:10"}
+func (c ToUpper) Resources() tasks.Resources {
+	return tasks.Resources{CPUs: 1, Memory: 1, Time: 1, Container: "docker://debian:10"}
 }
 
 type Merge struct {
@@ -74,12 +74,12 @@ func (c Merge) Command() string {
 	return fmt.Sprintf(`cat %s >%s`, strings.Join(c.Inputs, " "), c.Output)
 }
 
-func (c Merge) Resources() flow.Resources {
-	return flow.Resources{CPUs: 1, Memory: 1, Time: 1, Container: "docker://debian:10"}
+func (c Merge) Resources() tasks.Resources {
+	return tasks.Resources{CPUs: 1, Memory: 1, Time: 1, Container: "docker://debian:10"}
 }
 
 func main() {
-	queue := flow.Queue{}
+	queue := tasks.Queue{}
 
 	queue.Add(&CreateInput{Word: "hello", Output: "input1.txt"})
 	queue.Add(&CreateInput{Word: "world", Output: "input2.txt"})

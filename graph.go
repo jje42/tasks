@@ -1,8 +1,9 @@
-package flow
+package tasks
 
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/google/uuid"
+	"github.com/guumaster/logsymbols"
 )
 
 type job struct {
@@ -35,8 +37,7 @@ type job struct {
 // Command takes the original command line and allows adding pre- or post-
 // commands.
 func (j job) Command() string {
-	return fmt.Sprintf(`set -o errexit
-set -o pipefail
+	return fmt.Sprintf(`set -euo pipefail
 set -o verbose
 env | sort
 %s`, j.Cmd.Command())
@@ -84,7 +85,7 @@ func newGraph(cmds []Commander) (graph, error) {
 		dir, file := filepath.Split(job.Outputs[0])
 		job.doneFile = filepath.Join(dir, fmt.Sprintf(".%s.done", file))
 		job.doneFile = filepath.Join(
-			v.GetString("flowdir"),
+			v.GetString("tasksdir"),
 			"done",
 			strings.TrimSuffix(job.Stdout, ".out")+".done",
 		)
@@ -140,7 +141,7 @@ func dependenciesFor(j *job, allJobs []*job) []*job {
 
 // What happens if a job fails? How do we stop subsequent jobs being run while
 // still exiting the loop eventually.
-func (g graph) Process() error {
+func (g graph) Process(opts Options) error {
 	var runner Runner
 	var err error
 	switch runnerStr := v.GetString("job_runner"); runnerStr {
@@ -159,25 +160,39 @@ func (g graph) Process() error {
 	case "dummy":
 		runner = DummyRunner{}
 	default:
-		log.Fatalf("Unknown runner requested: %s", runnerStr)
+		return fmt.Errorf("unknown runner requested: %s", runnerStr)
 	}
 	// Ensure that however we leave this function any running jobs are
 	// terminated.
 	defer killRunningJobs(g, runner)
 
+	// Rather than alway creating a report log with a hard-coded name,
+	// require the client to specify the name if they want the file to be
+	// created.
 	// "yyyy-MM-DD_HHmmss"
-	t := time.Now()
-	timestamp := fmt.Sprintf(
-		"%d-%02d-%02d_%02d%02d%02d",
-		t.Year(), t.Month(), t.Day(),
-		t.Hour(), t.Minute(), t.Second(),
-	)
-	jobReportfile := fmt.Sprintf("jobreport_%s.csv", timestamp)
-	w, err := os.Create(jobReportfile)
-	if err != nil {
-		return fmt.Errorf("unable to create job report file: %v", err)
+	// t := time.Now()
+	// timestamp := fmt.Sprintf(
+	// 	"%d-%02d-%02d_%02d%02d%02d",
+	// 	t.Year(), t.Month(), t.Day(),
+	// 	t.Hour(), t.Minute(), t.Second(),
+	// )
+	// jobReportfile := fmt.Sprintf("jobreport_%s.csv", timestamp)
+	// // w, err := os.Create(jobReportfile)
+	// w, err := os.OpenFile(jobReportfile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// if err != nil {
+	// 	return fmt.Errorf("unable to create job report file: %v", err)
+	// }
+	// defer w.Close()
+	// report, err := NewJobreport(w)
+	var w io.Writer
+	if opts.ReportLog != "" {
+		w, err = os.OpenFile(opts.ReportLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return fmt.Errorf("unable to create job report file: %v", err)
+		}
+	} else {
+		w = ioutil.Discard
 	}
-	defer w.Close()
 	report, err := NewJobreport(w)
 	if err != nil {
 		return fmt.Errorf("unable to create job report: %v", err)
@@ -194,10 +209,10 @@ func (g graph) Process() error {
 		<-sigs
 		quit <- true
 		<-allStopped // is this actually necessary? Will the send to quit block until received?
-		log.Printf("Shutting down jobs")
+		fmt.Printf("\nShutting down jobs\n")
 		err := killRunningJobs(g, runner)
 		if err != nil {
-			log.Printf("Signal handler unable to kill all jobs: %s", err)
+			fmt.Printf("Signal handler unable to kill all jobs: %s\n", err)
 		}
 		os.Exit(1)
 	}()
@@ -214,7 +229,9 @@ func (g graph) Process() error {
 			errs <- fmt.Errorf("failed to submit jobs: %v", err)
 			return
 		}
-		log.Printf("%d pending, %d running, %d failed, %d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
+		if !opts.Quiet {
+			fmt.Printf("Processing: %4d pending, %4d running, %4d failed, %4d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
+		}
 
 		for {
 			select {
@@ -236,17 +253,24 @@ func (g graph) Process() error {
 					// If no jobs were submitted but there are pending jobs
 					// and no running jobs it must mean jobs cannot run
 					// because of previous failures.
-					log.Printf("There are no more jobs that can be run.")
+					if !opts.Quiet {
+						fmt.Printf("\n%v There are no more jobs that can be run.\n", logsymbols.Warn)
+					}
 					return
 				}
 				if nCompleted > 0 || nSubmitted > 0 {
-					log.Printf("%d pending, %d running, %d failed, %d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
+					if !opts.Quiet {
+						fmt.Printf("\rProcessing: %4d pending, %4d running, %4d failed, %4d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
+					}
 				}
 				if len(g.pending) == 0 && len(g.running) == 0 {
-					log.Printf("There are no more jobs to run")
+					if !opts.Quiet {
+						fmt.Printf("\n%v There are no more jobs to run\n", logsymbols.Success)
+					}
 					return
 				}
-				time.Sleep(60 * time.Second)
+				// time.Sleep(60 * time.Second)
+				time.Sleep(1 * time.Second)
 			}
 		}
 	}()
@@ -266,16 +290,28 @@ func (g graph) Process() error {
 	if len(g.failed) > 0 {
 		boldRed := color.New(color.Bold, color.FgRed).SprintfFunc()
 		log.Printf("Workflow completed with %d %s jobs, see stdout for details", len(g.failed), boldRed("FAILED"))
+		if !opts.Quiet {
+			fmt.Printf("%v Workflow completed with %d %s jobs, see stdout for details\n", len(g.failed), logsymbols.Error, boldRed("FAILED"))
+		}
 		for _, job := range g.failed {
 			log.Printf("%s: %s, output: %s", boldRed("FAILED"), job.UUID, job.Stdout)
+			if !opts.Quiet {
+				fmt.Printf("%s: %s, output: %s\n", boldRed("FAILED"), job.UUID, job.Stdout)
+			}
 		}
 	} else {
 		greenBold := color.New(color.Bold, color.FgGreen).SprintfFunc()
 		log.Printf("Workflow completed %s", greenBold("SUCCESSFULLY"))
+		if !opts.Quiet {
+			fmt.Printf("%v Workflow completed %s\n", logsymbols.Success, greenBold("SUCCESSFULLY"))
+		}
 	}
-	log.Printf("Completed with %d completed and %d failed (running = %d)", len(g.completed), len(g.failed), len(g.running))
+	// log.Printf("Completed with %d completed and %d failed (running = %d)", len(g.completed), len(g.failed), len(g.running))
+	// if !opts.Quiet {
+	// 	fmt.Printf("Completed with %d completed and %d failed (running = %d)\n", len(g.completed), len(g.failed), len(g.running))
+	// }
 	if len(g.failed) > 0 {
-		return errors.New("flow workflow completed with failures")
+		return errors.New("tasks workflow completed with failures")
 	}
 	return nil
 }
@@ -391,7 +427,7 @@ func newExecutionContext(j *job) (executionContext, error) {
 		job: j,
 	}
 	var err error
-	cxt.dir, err = ioutil.TempDir(v.GetString("flowdir"), "flow")
+	cxt.dir, err = ioutil.TempDir(v.GetString("tasksdir"), "tasks")
 	if err != nil {
 		return executionContext{}, fmt.Errorf("failed to create temp directory: %v", err)
 	}
@@ -436,12 +472,12 @@ env | sort
 		os.MkdirAll(d, 0755)
 	}
 
-	// Typically flowdir is inside a users home directory and this is
+	// Typically tasksdir is inside a users home directory and this is
 	// automatically bound in, but it may not be and the -C option may be
 	// provided.
 	if r.Container != "" {
 		content.WriteString(fmt.Sprintf(
-			"%s exec %s -B %s:/flowdir %s %s /flowdir/%s",
+			"%s exec %s -B %s:/tasksdir %s %s /tasksdir/%s",
 			singularityBin,
 			r.SingularityExtraArgs,
 			filepath.Dir(scriptFile),

@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jje42/flow"
+	"github.com/jje42/tasks"
 	"github.com/spf13/cobra"
 )
 
@@ -18,8 +18,8 @@ var (
 	jobRunner        string
 	configFile       string
 	rootCmd          = &cobra.Command{
-		Use:     "flow [flags] <workflow.go>",
-		Short:   fmt.Sprintf("flow (%s built on %s)", version, buildDate),
+		Use:     "tasks [flags] <workflow.go>",
+		Short:   fmt.Sprintf("tasks (%s built on %s)", version, buildDate),
 		Long:    "",
 		Version: version,
 		Args:    cobra.ExactArgs(1),
@@ -45,11 +45,11 @@ func myMain(cmd *cobra.Command, args []string) {
 	if jobRunner != "" {
 		overrides["job_runner"] = jobRunner
 	}
-	flow.InitConfig(configFile, overrides)
+	tasks.InitConfig(configFile, overrides)
 	timestamp := makeTimestamp()
 
 	// Log file ----------
-	logFile := fmt.Sprintf("flow_%s.log", timestamp)
+	logFile := fmt.Sprintf("tasks_%s.log", timestamp)
 	logw, err := os.Create(logFile)
 	if err != nil {
 		log.Fatalf("Unable to create log file: %s: %v", logFile, err)
@@ -58,9 +58,9 @@ func myMain(cmd *cobra.Command, args []string) {
 	log.SetOutput(io.MultiWriter(os.Stderr, logw))
 
 	// Config file ----------
-	flow.SafeWriteConfigAs(fmt.Sprintf("flow_config_%s.yaml", timestamp))
+	tasks.SafeWriteConfigAs(fmt.Sprintf("tasks_config_%s.yaml", timestamp))
 
-	if err := flow.RunWorkflow(args[0]); err != nil {
+	if err := tasks.RunWorkflow(args[0]); err != nil {
 		log.Fatal(err)
 	}
 }

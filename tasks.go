@@ -1,7 +1,8 @@
-package flow
+package tasks
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -15,10 +16,14 @@ import (
 	"text/template"
 
 	"github.com/google/uuid"
+	"github.com/guumaster/logsymbols"
 	"github.com/spf13/viper"
 )
 
 var v *viper.Viper = viper.New()
+
+// Console logger
+var cLog = log.New(os.Stderr, "", 0)
 
 type Commander interface {
 	AnalysisName() string
@@ -100,14 +105,54 @@ func (q *Queue) Tasks() []Commander {
 	return q.tasks
 }
 
-func (q *Queue) Run() error {
-	if !v.IsSet("flowdir") {
-		InitConfig("", map[string]interface{}{})
+type Options struct {
+	Log              string
+	ReportLog        string
+	StartFromScratch bool
+	Quiet            bool
+}
+
+func (q *Queue) Run(opts ...Options) error {
+	if len(opts) > 1 {
+		return errors.New("you cannot provide more than one Options struct")
+	}
+	var op Options
+	if len(opts) == 1 {
+		op = opts[0]
+	}
+	// Need to set up log file
+	// log.SetOutput(ioutil.Discard)
+
+	if op.Log != "" {
+		w, err := os.OpenFile(op.Log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return fmt.Errorf("unable to open log file: %w", err)
+		}
+		defer w.Close()
+		log.SetOutput(w)
+	} else {
+		log.SetOutput(ioutil.Discard)
+	}
+
+	if !v.IsSet("tasksdir") {
+		InitConfig("", map[string]interface{}{
+			"start_from_scratch": op.StartFromScratch,
+		})
 	}
 	if len(q.tasks) > 0 {
 		log.Printf("Starting workflow with %d jobs", len(q.tasks))
+		if !op.Quiet {
+			if op.Log != "" {
+				fmt.Printf("%v Writing log to %s\n", logsymbols.Info, op.Log)
+			}
+			fmt.Printf("%v Starting workflow with %d jobs\n", logsymbols.Success, len(q.tasks))
+		}
 	} else {
 		log.Printf("No jobs where added to the queue, nothing to do!")
+		if !op.Quiet {
+			fmt.Printf("%v No jobs where added to the queue, nothing to do!", logsymbols.Error)
+		}
+		return nil
 	}
 	for _, task := range q.tasks {
 		freezeTask(task)
@@ -120,9 +165,9 @@ func (q *Queue) Run() error {
 	if err != nil {
 		return fmt.Errorf("unable to create graph: %v", err)
 	}
-	err = g.Process()
+	err = g.Process(op)
 	if err != nil {
-		log.Fatalf("Failed to run workflow: %v", err)
+		return fmt.Errorf("failed to run workflow: %v", err)
 	}
 	return nil
 }
@@ -199,8 +244,8 @@ func InitConfig(fn string, overrides map[string]interface{}) error {
 		jobRunner = "slurm"
 	}
 	defaults := map[string]interface{}{
-		"flowdir":            ".flow",
-		"tmpdir":             ".flow/tmp",
+		"tasksdir":           ".tasks",
+		"tmpdir":             ".tasks/tmp",
 		"start_from_scratch": false,
 		"job_runner":         jobRunner,
 		"singularity_bin":    "singularity",
@@ -209,10 +254,10 @@ func InitConfig(fn string, overrides map[string]interface{}) error {
 	for key, value := range defaults {
 		v.SetDefault(key, value)
 	}
-	v.SetConfigName("flow")
+	v.SetConfigName("tasks")
 	v.SetConfigType("yaml")
-	v.AddConfigPath("$HOME/.config/flow")
-	v.SetEnvPrefix("flow")
+	v.AddConfigPath("$HOME/.config/tasks")
+	v.SetEnvPrefix("tasks")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 	if err := v.ReadInConfig(); err != nil {
@@ -224,7 +269,7 @@ func InitConfig(fn string, overrides map[string]interface{}) error {
 	if fn != "" {
 		localconfig := viper.New()
 		localconfig.SetConfigFile(fn)
-		localconfig.SetEnvPrefix("flow")
+		localconfig.SetEnvPrefix("tasks")
 		localconfig.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 		localconfig.AutomaticEnv()
 		if err := localconfig.ReadInConfig(); err != nil {
@@ -239,9 +284,9 @@ func InitConfig(fn string, overrides map[string]interface{}) error {
 	for key, value := range overrides {
 		v.Set(key, value)
 	}
-	err := os.MkdirAll(v.GetString("flowdir"), 0755)
+	err := os.MkdirAll(v.GetString("tasksdir"), 0755)
 	if err != nil {
-		return fmt.Errorf("failed to create flowdir: %s: %v", v.GetString("flowdir"), err)
+		return fmt.Errorf("failed to create tasksdir: %s: %v", v.GetString("tasksdir"), err)
 	}
 	err = os.MkdirAll(v.GetString("tmpdir"), 0755)
 	if err != nil {
@@ -250,10 +295,10 @@ func InitConfig(fn string, overrides map[string]interface{}) error {
 	return nil
 }
 
-// should this be in the flow package to make in easier for users to run workflows?
+// should this be in the tasks package to make in easier for users to run workflows?
 func RunWorkflow(fn string) error {
-	if !v.IsSet("flowdir") {
-		// If flowdir is not set, config has not been initialised. Should we
+	if !v.IsSet("tasksdir") {
+		// If tasksdir is not set, config has not been initialised. Should we
 		// return an error and force the user to init the config?
 		InitConfig("", map[string]interface{}{})
 	}
@@ -293,7 +338,7 @@ func loadPlugin(fn string) (func(*Queue), error) {
 }
 
 func compileWorkflow(fn string) (string, error) {
-	dir, err := ioutil.TempDir(v.GetString("flowdir"), "workflow")
+	dir, err := ioutil.TempDir(v.GetString("tasksdir"), "workflow")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %v", err)
 	}
