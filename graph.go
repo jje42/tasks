@@ -269,8 +269,8 @@ func (g graph) Process(opts Options) error {
 					}
 					return
 				}
-				// time.Sleep(60 * time.Second)
-				time.Sleep(1 * time.Second)
+				time.Sleep(60 * time.Second)
+				// time.Sleep(1 * time.Second)
 			}
 		}
 	}()
