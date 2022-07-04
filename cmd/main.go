@@ -38,14 +38,18 @@ func main() {
 }
 
 func myMain(cmd *cobra.Command, args []string) {
-	overrides := make(map[string]interface{})
+	// overrides := make(map[string]interface{})
+	o := tasks.Options{}
 	if startFromScratch {
-		overrides["start_from_scratch"] = true
+		// overrides["start_from_scratch"] = true
+		o.StartFromScratch = true
 	}
 	if jobRunner != "" {
-		overrides["job_runner"] = jobRunner
+		// overrides["job_runner"] = jobRunner
+		o.JobRunner = jobRunner
 	}
-	tasks.InitConfig(configFile, overrides)
+
+	// tasks.initConfig(configFile, overrides)
 	timestamp := makeTimestamp()
 
 	// Log file ----------

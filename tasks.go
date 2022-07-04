@@ -110,6 +110,10 @@ type Options struct {
 	ReportLog        string
 	StartFromScratch bool
 	Quiet            bool
+	Tasksdir         string
+	Tmpdir           string
+	JobRunner        string
+	SingularityBin   string
 }
 
 func (q *Queue) Run(opts ...Options) error {
@@ -135,15 +139,33 @@ func (q *Queue) Run(opts ...Options) error {
 	}
 
 	if !v.IsSet("tasksdir") {
-		InitConfig("", map[string]interface{}{
-			"start_from_scratch": op.StartFromScratch,
-		})
+		m := make(map[string]interface{})
+		m["start_from_scratch"] = op.StartFromScratch
+		m["quiet"] = op.Quiet
+		// It would be better to have initConfig ignore empty strings
+		if op.Tasksdir != "" {
+			m["taskdir"] = op.Tasksdir
+		}
+		if op.Tmpdir != "" {
+			m["tmpdir"] = op.Tmpdir
+		}
+		if op.JobRunner != "" {
+			m["jobrunner"] = op.JobRunner
+		}
+		if op.SingularityBin != "" {
+			m["singularitybin"] = op.SingularityBin
+		}
+
+		initConfig("", m)
 	}
 	if len(q.tasks) > 0 {
 		log.Printf("Starting workflow with %d jobs", len(q.tasks))
 		if !op.Quiet {
 			if op.Log != "" {
 				fmt.Printf("%v Writing log to %s\n", logsymbols.Info, op.Log)
+			}
+			if op.StartFromScratch {
+				fmt.Printf("%v start_from_scratch = true\n", logsymbols.Info)
 			}
 			fmt.Printf("%v Starting workflow with %d jobs\n", logsymbols.Success, len(q.tasks))
 		}
@@ -235,7 +257,7 @@ func resourcesFor(analysisName string) (Resources, error) {
 	}, nil
 }
 
-func InitConfig(fn string, overrides map[string]interface{}) error {
+func initConfig(fn string, overrides map[string]interface{}) error {
 	jobRunner := "local"
 	if _, err := exec.LookPath("qsub"); err == nil {
 		jobRunner = "pbs"
@@ -300,7 +322,7 @@ func RunWorkflow(fn string) error {
 	if !v.IsSet("tasksdir") {
 		// If tasksdir is not set, config has not been initialised. Should we
 		// return an error and force the user to init the config?
-		InitConfig("", map[string]interface{}{})
+		initConfig("", map[string]interface{}{})
 	}
 	workflowFunc, err := loadPlugin(fn)
 	if err != nil {
