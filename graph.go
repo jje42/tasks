@@ -469,7 +469,7 @@ env | sort
 		ds = append(ds, filepath.Dir(fn))
 	}
 	for _, d := range unique(ds) {
-		content.WriteString(fmt.Sprintf(`mkdir -p "%s"\n`, d))
+		content.WriteString(fmt.Sprintf(`mkdir -p "%s"`+"\n", d))
 		os.MkdirAll(d, 0755)
 	}
 
