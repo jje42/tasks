@@ -469,7 +469,7 @@ env | sort
 		ds = append(ds, filepath.Dir(fn))
 	}
 	for _, d := range unique(ds) {
-		content.WriteString(fmt.Sprintf("mkdir -p %s\n", d))
+		content.WriteString(fmt.Sprintf(`mkdir -p "%s"\n`, d))
 		os.MkdirAll(d, 0755)
 	}
 
@@ -478,7 +478,7 @@ env | sort
 	// provided.
 	if r.Container != "" {
 		content.WriteString(fmt.Sprintf(
-			"%s exec %s -B %s:/tasksdir %s %s /tasksdir/%s",
+			`%s exec %s -B "%s:/tasksdir" "%s" %s "/tasksdir/%s"`,
 			singularityBin,
 			r.SingularityExtraArgs,
 			filepath.Dir(scriptFile),
