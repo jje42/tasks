@@ -233,6 +233,8 @@ func (g graph) Process(opts Options) error {
 			fmt.Printf("Processing: %4d pending, %4d running, %4d failed, %4d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
 		}
 
+		seenFailed := make(map[uuid.UUID]bool)
+
 		for {
 			select {
 			case <-quit:
@@ -244,6 +246,7 @@ func (g graph) Process(opts Options) error {
 					errs <- fmt.Errorf("failed to check running jobs: %v", err)
 					return
 				}
+
 				nSubmitted, err := g.submitPending(runner)
 				if err != nil {
 					errs <- fmt.Errorf("failed to submit jobs: %v", err)
@@ -260,6 +263,18 @@ func (g graph) Process(opts Options) error {
 				}
 				if nCompleted > 0 || nSubmitted > 0 {
 					if !opts.Quiet {
+						boldRed := color.New(color.Bold, color.FgRed).SprintfFunc()
+						for _, job := range g.failed {
+							first := true
+							if _, ok := seenFailed[job.UUID]; !ok {
+								if first {
+									fmt.Print("\r")
+									first = false
+								}
+								fmt.Printf("%v %s: %s\n", logsymbols.Error, boldRed("FAILED"), job.Stdout)
+								seenFailed[job.UUID] = true
+							}
+						}
 						fmt.Printf("\rProcessing: %4d pending, %4d running, %4d failed, %4d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
 					}
 				}
