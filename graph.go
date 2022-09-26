@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -199,16 +200,17 @@ func (g graph) Process(opts Options) error {
 	}
 
 	sigs := make(chan os.Signal, 1)
-	quit := make(chan bool)
-	allStopped := make(chan bool)
-
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+	ctx := context.Background()
+	ctxWithCancel, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// Set a goroutine to gracefully shutdown running jobs if SIGINT or SIGTERM
 	// recieved.
 	go func() {
 		<-sigs
-		quit <- true
-		<-allStopped // is this actually necessary? Will the send to quit block until received?
+		cancel()
 		fmt.Printf("\nShutting down jobs\n")
 		err := killRunningJobs(g, runner)
 		if err != nil {
@@ -234,13 +236,11 @@ func (g graph) Process(opts Options) error {
 		}
 
 		seenFailed := make(map[uuid.UUID]bool)
-
 		for {
 			select {
-			case <-quit:
-				allStopped <- true
-				time.Sleep(1 * time.Hour)
-			default:
+			case <-ctxWithCancel.Done():
+				return
+			case <-time.After(60 * time.Second):
 				nCompleted, err := g.checkCompleted(runner, report)
 				if err != nil {
 					errs <- fmt.Errorf("failed to check running jobs: %v", err)
@@ -284,8 +284,6 @@ func (g graph) Process(opts Options) error {
 					}
 					return
 				}
-				time.Sleep(60 * time.Second)
-				// time.Sleep(1 * time.Second)
 			}
 		}
 	}()
