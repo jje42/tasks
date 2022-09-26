@@ -239,7 +239,7 @@ func (g graph) Process(opts Options) error {
 		for {
 			select {
 			case <-ctxWithCancel.Done():
-				return
+				select {}
 			case <-time.After(60 * time.Second):
 				nCompleted, err := g.checkCompleted(runner, report)
 				if err != nil {
