@@ -144,7 +144,7 @@ func (q *Queue) Run(opts ...Options) error {
 		m["quiet"] = op.Quiet
 		// It would be better to have initConfig ignore empty strings
 		if op.Tasksdir != "" {
-			m["taskdir"] = op.Tasksdir
+			m["tasksdir"] = op.Tasksdir
 		}
 		if op.Tmpdir != "" {
 			m["tmpdir"] = op.Tmpdir
@@ -442,4 +442,8 @@ func RenderTemplate(tpl string, object interface{}) string {
 type Tasks struct {
 	Commands []Commander
 	Outputs  map[string]string
+}
+
+func TasksDir() string {
+	return v.GetString("tasksdir")
 }
