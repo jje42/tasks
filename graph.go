@@ -471,12 +471,16 @@ func createJobFile(jobFile, scriptFile string, j *job) error {
 	if singularityBin == "" {
 		singularityBin = "singularity"
 	}
+	d := filepath.Dir(scriptFile)
 	// slurm _requires_ a shebang line
 	var content strings.Builder
 	content.WriteString(`#!/usr/bin/env bash
 set -o verbose
 env | sort
 `)
+	// Always change into the same directory as the script to prevent
+	// accedental writing to $HOME.
+	content.WriteString("cd " + d + "\n")
 	ds := []string{}
 	for _, fn := range j.Outputs {
 		ds = append(ds, filepath.Dir(fn))
