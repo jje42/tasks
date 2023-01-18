@@ -234,6 +234,11 @@ func (g graph) Process(opts Options) error {
 		if !opts.Quiet {
 			fmt.Printf("Processing: %4d pending, %4d running, %4d failed, %4d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
 		}
+		if len(g.pending) == 0 && len(g.running) == 0 {
+			// Must be running a workflow that has already been run
+			// successfully to completion.
+			return
+		}
 
 		seenFailed := make(map[uuid.UUID]bool)
 		for {
