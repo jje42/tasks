@@ -87,16 +87,10 @@ func newGraph(cmds []Commander) (graph, error) {
 			log.Fatal("Job has no defined outputs: " + job.Cmd.AnalysisName())
 		}
 		job.Stdout = fmt.Sprintf("%s.out", job.Outputs[0])
-		// dir, file := filepath.Split(job.Outputs[0])
-		// job.doneFile = filepath.Join(dir, fmt.Sprintf(".%s.done", file))
-		realOut, err := filepath.EvalSymlinks(job.Stdout)
-		if err != nil {
-			return g, fmt.Errorf("unable to resolve symlink: %w", err)
-		}
 		job.doneFile = filepath.Join(
 			tasksdir,
 			"done",
-			strings.TrimSuffix(realOut, ".out")+".done",
+			strings.TrimSuffix(job.Stdout, ".out")+".done",
 		)
 		g.jobs = append(g.jobs, job)
 	}
