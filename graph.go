@@ -69,6 +69,10 @@ type graph struct {
 }
 
 func newGraph(cmds []Commander) (graph, error) {
+	tasksdir := v.GetString("tasksdir")
+	if tasksdir == "" {
+		panic("tasksdirs is empty")
+	}
 	g := graph{}
 	for _, cmd := range cmds {
 		job := &job{
@@ -83,12 +87,16 @@ func newGraph(cmds []Commander) (graph, error) {
 			log.Fatal("Job has no defined outputs: " + job.Cmd.AnalysisName())
 		}
 		job.Stdout = fmt.Sprintf("%s.out", job.Outputs[0])
-		dir, file := filepath.Split(job.Outputs[0])
-		job.doneFile = filepath.Join(dir, fmt.Sprintf(".%s.done", file))
+		// dir, file := filepath.Split(job.Outputs[0])
+		// job.doneFile = filepath.Join(dir, fmt.Sprintf(".%s.done", file))
+		realOut, err := filepath.EvalSymlinks(job.Stdout)
+		if err != nil {
+			return g, fmt.Errorf("unable to resolve symlink: %w", err)
+		}
 		job.doneFile = filepath.Join(
-			v.GetString("tasksdir"),
+			tasksdir,
 			"done",
-			strings.TrimSuffix(job.Stdout, ".out")+".done",
+			strings.TrimSuffix(realOut, ".out")+".done",
 		)
 		g.jobs = append(g.jobs, job)
 	}
@@ -232,7 +240,13 @@ func (g graph) Process(opts Options) error {
 			return
 		}
 		if !opts.Quiet {
-			fmt.Printf("Processing: %4d pending, %4d running, %4d failed, %4d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
+			fmt.Printf(
+				"Processing: %4d pending, %4d running, %4d failed, %4d done",
+				len(g.pending),
+				len(g.running),
+				len(g.failed),
+				len(g.completed),
+			)
 		}
 		if len(g.pending) == 0 && len(g.running) == 0 {
 			// Must be running a workflow that has already been run
@@ -262,7 +276,10 @@ func (g graph) Process(opts Options) error {
 					// and no running jobs it must mean jobs cannot run
 					// because of previous failures.
 					if !opts.Quiet {
-						fmt.Printf("\n%v There are no more jobs that can be run.\n", logsymbols.Warn)
+						fmt.Printf(
+							"\n%v There are no more jobs that can be run.\n",
+							logsymbols.Warn,
+						)
 					}
 					return
 				}
@@ -276,11 +293,22 @@ func (g graph) Process(opts Options) error {
 									fmt.Print("\r")
 									first = false
 								}
-								fmt.Printf("%v %s: %s\n", logsymbols.Error, boldRed("FAILED"), job.Stdout)
+								fmt.Printf(
+									"%v %s: %s\n",
+									logsymbols.Error,
+									boldRed("FAILED"),
+									job.Stdout,
+								)
 								seenFailed[job.UUID] = true
 							}
 						}
-						fmt.Printf("\rProcessing: %4d pending, %4d running, %4d failed, %4d done", len(g.pending), len(g.running), len(g.failed), len(g.completed))
+						fmt.Printf(
+							"\rProcessing: %4d pending, %4d running, %4d failed, %4d done",
+							len(g.pending),
+							len(g.running),
+							len(g.failed),
+							len(g.completed),
+						)
 					}
 				}
 				if len(g.pending) == 0 && len(g.running) == 0 {
@@ -307,7 +335,11 @@ func (g graph) Process(opts Options) error {
 	}
 	if len(g.failed) > 0 {
 		boldRed := color.New(color.Bold, color.FgRed).SprintfFunc()
-		log.Printf("Workflow completed with %d %s jobs, see stdout for details", len(g.failed), boldRed("FAILED"))
+		log.Printf(
+			"Workflow completed with %d %s jobs, see stdout for details",
+			len(g.failed),
+			boldRed("FAILED"),
+		)
 		if !opts.Quiet {
 			fmt.Printf("%v Workflow completed with %d %s jobs, see stdout for details\n",
 				logsymbols.Error, len(g.failed), boldRed("FAILED"))
@@ -360,7 +392,11 @@ func (g *graph) submitPending(r Runner) (int, error) {
 		if pending.isRunnable() {
 			ctx, err := newExecutionContext(pending)
 			if err != nil {
-				return submitted, fmt.Errorf("failed to create execution context for %s: %v", pending.UUID, err)
+				return submitted, fmt.Errorf(
+					"failed to create execution context for %s: %v",
+					pending.UUID,
+					err,
+				)
 			}
 			if err := r.Run(ctx); err != nil {
 				return submitted, fmt.Errorf("unable to run job: %v", err)
@@ -394,7 +430,11 @@ func (g *graph) checkCompleted(r Runner, report jobReport) (int, error) {
 			running.hasCompleted = true
 			successful, err := r.CompletedSuccessfully(running)
 			if err != nil {
-				return nCompleted, fmt.Errorf("unable to determine job state: %s: %s", running.ID, err)
+				return nCompleted, fmt.Errorf(
+					"unable to determine job state: %s: %s",
+					running.ID,
+					err,
+				)
 			}
 			idx, err := jobIndex(running, g.running)
 			if err != nil {
@@ -404,14 +444,27 @@ func (g *graph) checkCompleted(r Runner, report jobReport) (int, error) {
 				running.completedSuccessfully = true
 				// done files are only created on successful completion of a job.
 				green := color.New(color.Bold, color.FgGreen).SprintfFunc()
-				log.Printf("Job completed %s %s %s", green("SUCCESSFULLY"), running.UUID, running.ID)
+				log.Printf(
+					"Job completed %s %s %s",
+					green("SUCCESSFULLY"),
+					running.UUID,
+					running.ID,
+				)
 				err := os.MkdirAll(filepath.Dir(running.doneFile), 0755)
 				if err != nil {
-					return nCompleted, fmt.Errorf("unable to create done file directory for job: %s: %s", running.ID, err)
+					return nCompleted, fmt.Errorf(
+						"unable to create done file directory for job: %s: %s",
+						running.ID,
+						err,
+					)
 				}
 				_, err = os.Create(running.doneFile)
 				if err != nil {
-					return nCompleted, fmt.Errorf("unable to create done file for job: %s: %s", running.ID, err)
+					return nCompleted, fmt.Errorf(
+						"unable to create done file for job: %s: %s",
+						running.ID,
+						err,
+					)
 				}
 				resources, err := r.ResourcesUsed(running)
 				if err != nil {
