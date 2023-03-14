@@ -3,6 +3,7 @@ module github.com/jje42/tasks
 go 1.15
 
 require (
+	github.com/cstanze/stripmargin v0.0.0-20230131133058-c8c0fd3ddeb0
 	github.com/fatih/color v1.12.0
 	github.com/google/uuid v1.2.0
 	github.com/guumaster/logsymbols v0.3.1

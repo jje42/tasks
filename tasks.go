@@ -15,6 +15,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/cstanze/stripmargin"
 	"github.com/google/uuid"
 	"github.com/guumaster/logsymbols"
 	"github.com/spf13/viper"
@@ -436,7 +437,7 @@ func RenderTemplate(tpl string, object interface{}) string {
 	if err != nil {
 		panic(err)
 	}
-	return b.String()
+	return stripmargin.StripMargin(b.String())
 }
 
 type Tasks struct {
