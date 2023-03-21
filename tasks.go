@@ -99,7 +99,12 @@ type Queue struct {
 }
 
 func (q *Queue) Add(task ...Commander) {
-	q.tasks = append(q.tasks, task...)
+	for _, t := range task {
+		if reflect.ValueOf(t).Kind() != reflect.Ptr {
+			panic("values passed to Add must be pointers")
+		}
+		q.tasks = append(q.tasks, t)
+	}
 }
 
 func (q *Queue) Tasks() []Commander {
