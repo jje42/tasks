@@ -528,6 +528,7 @@ func createJobFile(jobFile, scriptFile string, j *job) error {
 	var content strings.Builder
 	content.WriteString(`#!/usr/bin/env bash
 set -o verbose
+umask 022
 env | sort
 `)
 	// Always change into the same directory as the script to prevent
